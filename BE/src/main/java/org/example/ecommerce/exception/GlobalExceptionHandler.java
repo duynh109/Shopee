@@ -8,11 +8,17 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.FieldError;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -56,6 +62,32 @@ public class GlobalExceptionHandler {
         ProblemDetail pd = problem(HttpStatus.UNPROCESSABLE_CONTENT, "/errors/validation", "Dữ liệu không hợp lệ");
         pd.setProperty("errors", errors);
         return pd;
+    }
+
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ProblemDetail handleNoResourceFound(NoResourceFoundException ex) {
+        return problem(HttpStatus.NOT_FOUND, "/errors/not-found", "Không tìm thấy đường dẫn này");
+    }
+
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ProblemDetail handleMethodNotSupported(HttpRequestMethodNotSupportedException ex) {
+        return problem(HttpStatus.METHOD_NOT_ALLOWED, "/errors/method-not-allowed",
+                "Đường dẫn này không hỗ trợ method " + ex.getMethod());
+    }
+
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    public ProblemDetail handleMediaTypeNotSupported(HttpMediaTypeNotSupportedException ex) {
+        return problem(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "/errors/unsupported-media-type",
+                "Content-Type không được hỗ trợ, hãy dùng application/json");
+    }
+
+    @ExceptionHandler({
+            HttpMessageNotReadableException.class,
+            MethodArgumentTypeMismatchException.class,
+            MissingServletRequestParameterException.class
+    })
+    public ProblemDetail handleBadRequest(Exception ex) {
+        return problem(HttpStatus.BAD_REQUEST, "/errors/bad-request", "Request không đọc được");
     }
 
     @ExceptionHandler(Exception.class)

@@ -28,4 +28,13 @@ public class AuthController {
     public AuthResponse login(@Valid @RequestBody LoginRequest request) {
         return authService.login(request.email(), request.password());
     }
+
+    /**
+     * Với JWT thuần, BE không huỷ được token đã phát. Endpoint này để FE có chỗ gọi
+     * rồi tự xoá token đã lưu. Vẫn yêu cầu đăng nhập để FE biết token còn hợp lệ hay không.
+     */
+    @PostMapping("/logout")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void logout() {
+    }
 }

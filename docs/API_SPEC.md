@@ -10,6 +10,10 @@
 > việc cần sửa nằm ở [mục 12](#12-danh-sách-việc-cần-sửa-ở-fe-khi-tích-hợp).
 >
 > **Thứ tự làm việc:** làm BE cho đúng và đầy đủ trước; FE sửa sau.
+>
+> **Vị trí:** thư mục `docs/` nằm ở **gốc repo, ngang cấp với `BE/` và `FE/`** — vì đây là thiết kế
+> chung của cả hai nửa, không phải tài liệu riêng của BE. Khi sửa FE sau này, đọc lại bộ tài liệu này
+> trước: mỗi endpoint đều ghi rõ **màn nào của FE gọi tới nó** và route của màn đó.
 
 ---
 
@@ -97,6 +101,8 @@ nên `id` không được chứa dấu chấm. ID số tự tăng hoàn toàn th
 
 ### 1.4. Xác thực: header `Authorization: Bearer <token>`
 
+> Endpoint nào cần token, endpoint nào không: xem bảng ở **§1.10**.
+
 ```
 Authorization: Bearer eyJhbGciOiJIUzI1NiJ9...
 ```
@@ -133,10 +139,13 @@ camelCase là mặc định của Jackson và đúng convention Java — không 
 
 | Status | Khi nào dùng |
 |---|---|
+| `400` | Request không đọc được: JSON hỏng, path variable sai kiểu, thiếu query param |
 | `401` | Chưa đăng nhập, token sai/hết hạn, **hoặc sai email/mật khẩu lúc login** |
 | `403` | Đã đăng nhập nhưng không đủ quyền |
 | `404` | Không tìm thấy tài nguyên |
+| `405` | Đường dẫn đúng nhưng sai HTTP method |
 | `409` | Xung đột trạng thái (huỷ đơn đã giao, hết hàng khi đặt) |
+| `415` | Thiếu hoặc sai `Content-Type` |
 | `422` | **Lỗi validate dữ liệu đầu vào** |
 | `500` | Lỗi server |
 
@@ -179,12 +188,15 @@ code không phân biệt được hai ca đó.
 
 | Status | `type` | Khi nào |
 |---|---|---|
+| `400` | `/errors/bad-request` | JSON hỏng, path variable sai kiểu, thiếu query param |
 | `401` | `/errors/invalid-credentials` | Sai email hoặc mật khẩu lúc login |
 | `401` | `/errors/token-invalid` | Token hỏng, sai chữ ký, hoặc thiếu |
 | `401` | `/errors/token-expired` | Token hết hạn — FE dùng để kích hoạt refresh |
 | `403` | `/errors/forbidden` | Đã đăng nhập nhưng không đủ quyền |
 | `404` | `/errors/not-found` | Không tìm thấy tài nguyên |
+| `405` | `/errors/method-not-allowed` | Sai HTTP method |
 | `409` | `/errors/conflict` | Xung đột trạng thái |
+| `415` | `/errors/unsupported-media-type` | Thiếu hoặc sai `Content-Type` |
 | `422` | `/errors/validation` | Dữ liệu đầu vào không hợp lệ |
 | `500` | `/errors/internal-server-error` | Lỗi không lường trước |
 
@@ -227,6 +239,90 @@ BE **luôn phải validate** dù FE đã validate (không bao giờ tin client):
 FE chạy ở `http://localhost:3000`, BE ở `http://localhost:8081` → khác origin, cần bật CORS trong
 `SecurityConfig`: cho phép origin `http://localhost:3000`, method `GET, POST, PUT, DELETE, OPTIONS`,
 header `Authorization` và `Content-Type`.
+
+
+### 1.10. Bảng quyền: ai gọi được API nào
+
+Ba mức quyền dùng trong toàn bộ tài liệu này:
+
+| Ký hiệu | Nghĩa | Thiếu quyền thì nhận |
+|---|---|---|
+| 🌐 **Công khai** | Không cần token | — |
+| 🔒 **Đã đăng nhập** | Token hợp lệ, role nào cũng được | `401` |
+| 👑 **ADMIN** | Token hợp lệ **và** role `ADMIN` | `401` nếu thiếu token, `403` nếu là USER |
+
+| Method | Path API | Ai gọi được | BE | Màn FE gọi tới | Route màn FE |
+|---|---|---|---|---|---|
+| `POST` | `/api/auth/register` | 🌐 Công khai | ✅ | `Register` | `/register` |
+| `POST` | `/api/auth/login` | 🌐 Công khai | ✅ | `Login` | `/login` |
+| `POST` | `/api/auth/logout` | 🔒 Đã đăng nhập | ✅ | `Header` ³ | mọi màn `MainLayout` |
+| `POST` | `/api/auth/refresh-token` | 🌐 Công khai ¹ | ⬜ b9 | interceptor `utils/http.ts` ⁴ | — |
+| `GET` | `/api/users/me` | 🔒 Đã đăng nhập ² | ⬜ b3 | `Profile` *(stub)* | `/profile` |
+| `PUT` | `/api/users/me` | 🔒 Đã đăng nhập ² | ⬜ b3 | `Profile` *(stub)* | `/profile` |
+| `POST` | `/api/users/me/avatar` | 🔒 Đã đăng nhập ² | ⬜ b3 | `Profile` *(stub)* | `/profile` |
+| `GET` | `/api/products` | 🌐 Công khai | ✅ | `ProductList`, `ProductDetail` ⁵ | `/`, `/:nameId` |
+| `GET` | `/api/products/{id}` | 🌐 Công khai | ✅ | `ProductDetail` | `/:nameId` |
+| `POST` | `/api/products` | 👑 ADMIN | ⚠️ §5.3 | chưa có màn admin ⁶ | — |
+| `PUT` | `/api/products/{id}` | 👑 ADMIN | ⚠️ §5.3 | chưa có màn admin ⁶ | — |
+| `DELETE` | `/api/products/{id}` | 👑 ADMIN | ⚠️ §5.3 | chưa có màn admin ⁶ | — |
+| `GET` | `/api/categories` | 🌐 Công khai | ⬜ b4 | `ProductList` (thanh lọc) | `/` |
+| `GET` | `/api/cart` | 🔒 Đã đăng nhập ² | ⬜ b6 | `Cart` *(stub)*, `Header` ⁷ | `/cart` + mọi màn |
+| `POST` | `/api/cart/items` | 🔒 Đã đăng nhập ² | ⬜ b6 | `ProductDetail` (Thêm vào giỏ) | `/:nameId` |
+| `PUT` | `/api/cart/items/{id}` | 🔒 Đã đăng nhập ² | ⬜ b6 | `Cart` (ô số lượng) | `/cart` |
+| `DELETE` | `/api/cart/items/{id}` | 🔒 Đã đăng nhập ² | ⬜ b6 | `Cart` (xoá 1 dòng) | `/cart` |
+| `DELETE` | `/api/cart/items?ids=1,2,3` | 🔒 Đã đăng nhập ² | ⬜ b6 | `Cart` (xoá nhiều) | `/cart` |
+| `POST` | `/api/orders` | 🔒 Đã đăng nhập ² | ⬜ b7 | **chưa có màn** — trang đặt hàng | `/checkout` ⁸ |
+| `GET` | `/api/orders` | 🔒 Đã đăng nhập ² | ⬜ b7 | **chưa có màn** — Đơn mua | `/user/purchase` ⁸ |
+| `GET` | `/api/orders/{id}` | 🔒 Đã đăng nhập ² | ⬜ b7 | **chưa có màn** — chi tiết đơn | `/user/purchase/:id` ⁸ |
+| `PUT` | `/api/orders/{id}/cancel` | 🔒 Đã đăng nhập ² | ⬜ b7 | **chưa có màn** — Đơn mua | `/user/purchase` ⁸ |
+| `POST` | `/api/admin/categories` | 👑 ADMIN | ⬜ b4 | chưa có màn admin ⁶ | — |
+| `PUT` | `/api/admin/categories/{id}` | 👑 ADMIN | ⬜ b4 | chưa có màn admin ⁶ | — |
+| `DELETE` | `/api/admin/categories/{id}` | 👑 ADMIN | ⬜ b4 | chưa có màn admin ⁶ | — |
+| `POST` | `/api/admin/products` | 👑 ADMIN | ⬜ b5 | chưa có màn admin ⁶ | — |
+| `PUT` | `/api/admin/products/{id}` | 👑 ADMIN | ⬜ b5 | chưa có màn admin ⁶ | — |
+| `DELETE` | `/api/admin/products/{id}` | 👑 ADMIN | ⬜ b5 | chưa có màn admin ⁶ | — |
+| `POST` | `/api/admin/upload-image` | 👑 ADMIN | ⬜ b8 | chưa có màn admin ⁶ | — |
+| `GET` | `/api/admin/orders` | 👑 ADMIN | ⬜ b8 | chưa có màn admin ⁶ | — |
+| `PUT` | `/api/admin/orders/{id}/status` | 👑 ADMIN | ⬜ b8 | chưa có màn admin ⁶ | — |
+| `GET` | `/api/admin/users` | 👑 ADMIN | ⬜ b8 | chưa có màn admin ⁶ | — |
+
+¹ Phải công khai. Nó được gọi đúng vào lúc access token đã hết hạn, nên không thể đòi access token
+hợp lệ. Nó tự xác thực bằng refresh token nằm trong body.
+
+³ `components/Header/Header.tsx` là component dùng chung, có mặt trên mọi màn bọc bởi `MainLayout`
+(`/`, `/:nameId`, `/cart`, `/profile`). Nút đăng xuất nằm ở menu tài khoản của nó.
+
+⁴ Không màn nào gọi trực tiếp. Interceptor trong `FE/src/utils/http.ts` tự gọi khi gặp `401` có
+`type === "/errors/token-expired"`, rồi retry request gốc — người dùng không thấy gì.
+
+⁵ `ProductList` gọi để hiển thị danh sách + tìm kiếm + lọc; `ProductDetail` gọi lần nữa cho khối
+"sản phẩm tương tự" (cùng category).
+
+⁶ **Chưa có màn admin nào ở FE.** Giai đoạn đầu gọi các API này bằng Postman, hoặc seed dữ liệu bằng
+`data.sql`. Màn admin nếu làm thì là một app riêng, không nhét vào FE người mua.
+
+⁷ `Cart` gọi để hiển thị giỏ; `Header` gọi để hiện con số trên icon giỏ hàng.
+
+⁸ **Route đề xuất, chưa tồn tại** trong `FE/src/constants/path.ts`. Ghi ở đây để khi dựng màn thì
+dùng đúng đường dẫn đã thống nhất, khỏi phải sửa link sau.
+
+² **Hai tầng kiểm tra, đừng lẫn lộn.** Cột này chỉ nói về tầng thứ nhất.
+
+| | Câu hỏi | Ai trả lời | Thất bại |
+|---|---|---|---|
+| **Tầng 1 — xác thực & phân quyền** | "Đã đăng nhập chưa? Có role gì?" | `SecurityConfig` | `401` / `403` |
+| **Tầng 2 — quyền trên từng bản ghi** | "Đơn hàng này có phải của bạn?" | tầng service | `404` |
+
+`SecurityConfig` **không thể** trả lời tầng 2 — lúc nó chạy thì chưa ai truy vấn DB, nó chỉ biết
+đường dẫn và role. Cho nên `GET /api/orders/{id}` phải tự kiểm tra trong service rằng đơn đó thuộc
+về user đang đăng nhập. Quên tầng 2 là mọi user đọc được đơn hàng của nhau — dù tầng 1 vẫn "đúng".
+
+Lưu ý tầng 2 trả **`404` chứ không phải `403`**: trả `403` là đã tiết lộ rằng bản ghi đó tồn tại.
+
+**Một điều cần biết về thứ tự:** phân quyền chạy **trước** khi Spring tìm controller. Nên URL không
+tồn tại hoặc sai HTTP method mà **không có token** sẽ nhận `401`, không phải `404`/`405` — người
+chưa đăng nhập không dò được API có những đường dẫn nào. Có token hợp lệ thì vẫn trả `404`/`405`
+đúng như mong đợi.
 
 ---
 
@@ -372,6 +468,10 @@ Tên, ảnh và giá là **bản sao tại thời điểm đặt hàng**, không
 
 ### 3.1. `POST /api/auth/register`
 
+**Quyền:** 🌐 **Công khai** — không cần token
+
+**Màn FE:** `Register` — route `/register`
+
 Đăng ký tài khoản mới. **Đăng ký xong là đăng nhập luôn** — API trả token ngay.
 
 **Request**
@@ -408,6 +508,10 @@ Tên, ảnh và giá là **bản sao tại thời điểm đặt hàng**, không
 
 ### 3.2. `POST /api/auth/login`
 
+**Quyền:** 🌐 **Công khai** — không cần token
+
+**Màn FE:** `Login` — route `/login`
+
 **Request**
 ```json
 { "email": "duy@gmail.com", "password": "123456" }
@@ -428,12 +532,20 @@ Tên, ảnh và giá là **bản sao tại thời điểm đặt hàng**, không
 
 ### 3.3. `POST /api/auth/logout`
 
+**Quyền:** 🔒 **Đã đăng nhập** (USER hoặc ADMIN)
+
+**Màn FE:** `components/Header/Header.tsx` (menu tài khoản) — có mặt trên mọi màn dùng `MainLayout`
+
 Cần header `Authorization`. Với JWT thuần (stateless) thì BE không thực sự huỷ được token; endpoint này
 để FE có chỗ gọi rồi tự xoá token đã lưu.
 
 **Response `204`** — body rỗng.
 
 ### 3.4. `POST /api/auth/refresh-token` *(giai đoạn sau)*
+
+**Quyền:** 🌐 **Công khai** — không cần token — phải công khai, vì nó được gọi đúng lúc access token đã hết hạn; xác thực bằng refresh token trong body
+
+**Màn FE:** Không màn nào gọi trực tiếp; interceptor `FE/src/utils/http.ts` tự gọi rồi retry request gốc
 
 Khi làm refresh token, `/login` và `/register` trả thêm `refreshToken`, và lỗi token hết hạn có dạng:
 
@@ -454,11 +566,19 @@ Tất cả endpoint nhóm này cần header `Authorization`.
 
 ### 4.1. `GET /api/users/me`
 
+**Quyền:** 🔒 **Đã đăng nhập**, và chỉ thao tác được trên dữ liệu của **chính mình**
+
+**Màn FE:** `Profile` *(hiện là stub)* — route `/profile`
+
 Lấy thông tin user đang đăng nhập (dựa vào token, không truyền id).
 
 **Response `200`** — object User ở mục 2.1.
 
 ### 4.2. `PUT /api/users/me`
+
+**Quyền:** 🔒 **Đã đăng nhập**, và chỉ thao tác được trên dữ liệu của **chính mình**
+
+**Màn FE:** `Profile` *(hiện là stub)* — route `/profile`
 
 Cập nhật profile. Tất cả field đều optional — gửi field nào cập nhật field đó.
 
@@ -482,6 +602,10 @@ Cập nhật profile. Tất cả field đều optional — gửi field nào cậ
 
 ### 4.3. `POST /api/users/me/avatar`
 
+**Quyền:** 🔒 **Đã đăng nhập**, và chỉ thao tác được trên dữ liệu của **chính mình**
+
+**Màn FE:** `Profile` *(hiện là stub)* — route `/profile`
+
 **Request**: `multipart/form-data`, field name là `image`. Giới hạn ≤ 1MB, chỉ nhận `.jpg` / `.jpeg` / `.png`.
 
 **Response `200`**
@@ -496,6 +620,10 @@ Cập nhật profile. Tất cả field đều optional — gửi field nào cậ
 ## 5. Nhóm API: Product
 
 ### 5.1. `GET /api/products`
+
+**Quyền:** 🌐 **Công khai** — không cần token
+
+**Màn FE:** `ProductList` (route `/`) và `ProductDetail` (route `/:nameId`, khối "sản phẩm tương tự")
 
 Dùng chung cho trang chủ, tìm kiếm, lọc, sắp xếp, phân trang — tất cả qua query params. Không cần đăng nhập.
 
@@ -532,6 +660,10 @@ Luôn thêm điều kiện `deleted_at IS NULL`.
 
 ### 5.2. `GET /api/products/{id}`
 
+**Quyền:** 🌐 **Công khai** — không cần token
+
+**Màn FE:** `ProductDetail` — route `/:nameId`
+
 **Response `200`** — object Product ở mục 2.3.
 
 **Response `404`**
@@ -545,11 +677,35 @@ Luôn thêm điều kiện `deleted_at IS NULL`.
 
 Mỗi lần gọi thành công thì `view += 1`.
 
+
+### 5.3. Tạm thời: ba endpoint admin đang nằm ở `/api/products`
+
+**Quyền:** 👑 **Chỉ ADMIN**
+
+**Màn FE:** không có. Chưa có màn admin ở FE.
+
+Ba endpoint dưới đây **đã chạy được** nhưng đang ở sai đường dẫn so với §9: chúng là thao tác của
+admin nên đúng ra phải nằm dưới `/api/admin/products`. Bước 5 sẽ chuyển. Ghi lại ở đây để spec
+phản ánh đúng code hiện tại, đừng dùng làm đường dẫn chính thức.
+
+| Method | Path | Status | Ghi chú |
+|---|---|---|---|
+| `POST` | `/api/products` | `201` | Body `{ name, price, stock }` — **chưa có validation** |
+| `PUT` | `/api/products/{id}` | `200` | Body giống POST |
+| `DELETE` | `/api/products/{id}` | `204` | Xoá cứng; bước 5 đổi sang soft delete |
+
+Cả ba trả `ProblemDetail` chuẩn khi lỗi: `401` nếu thiếu token, `403` nếu token là USER,
+`404` nếu `id` không tồn tại.
+
 ---
 
 ## 6. Nhóm API: Category
 
 ### 6.1. `GET /api/categories`
+
+**Quyền:** 🌐 **Công khai** — không cần token
+
+**Màn FE:** `ProductList` (thanh lọc category bên trái) — route `/`
 
 **Response `200`**
 ```json
@@ -569,6 +725,10 @@ user đang đăng nhập (lấy user từ token, **không** tin `userId` do FE g
 
 ### 7.1. `GET /api/cart`
 
+**Quyền:** 🔒 **Đã đăng nhập**, và chỉ thao tác được trên dữ liệu của **chính mình**
+
+**Màn FE:** `Cart` *(stub)* route `/cart`, và `Header` cho con số trên icon giỏ
+
 **Response `200`**
 ```json
 [ { "...": "object CartItem ở mục 2.4" } ]
@@ -576,6 +736,10 @@ user đang đăng nhập (lấy user từ token, **không** tin `userId` do FE g
 Mỗi phần tử nhúng nguyên object product nên FE render được toàn bộ một dòng mà không cần gọi thêm API.
 
 ### 7.2. `POST /api/cart/items` — thêm vào giỏ
+
+**Quyền:** 🔒 **Đã đăng nhập**, và chỉ thao tác được trên dữ liệu của **chính mình**
+
+**Màn FE:** `ProductDetail` (nút "Thêm vào giỏ hàng") — route `/:nameId`
 
 **Request**
 ```json
@@ -598,6 +762,10 @@ Mỗi phần tử nhúng nguyên object product nên FE render được toàn b�
 
 ### 7.3. `PUT /api/cart/items/{id}` — sửa số lượng
 
+**Quyền:** 🔒 **Đã đăng nhập**, và chỉ thao tác được trên dữ liệu của **chính mình**
+
+**Màn FE:** `Cart` (ô nhập số lượng) — route `/cart`
+
 **Request**
 ```json
 { "quantity": 5 }
@@ -610,9 +778,17 @@ Nếu `id` không thuộc về user đang đăng nhập → `404` (không phải
 
 ### 7.4. `DELETE /api/cart/items/{id}` — xoá 1 sản phẩm
 
+**Quyền:** 🔒 **Đã đăng nhập**, và chỉ thao tác được trên dữ liệu của **chính mình**
+
+**Màn FE:** `Cart` (nút xoá một dòng) — route `/cart`
+
 **Response `204`** — body rỗng.
 
 ### 7.5. `DELETE /api/cart/items?ids=1,2,3` — xoá nhiều sản phẩm
+
+**Quyền:** 🔒 **Đã đăng nhập**, và chỉ thao tác được trên dữ liệu của **chính mình**
+
+**Màn FE:** `Cart` (nút xoá sau khi tick chọn nhiều dòng) — route `/cart`
 
 Dùng cho nút "Xoá" sau khi tick chọn nhiều dòng trong trang giỏ hàng.
 
@@ -627,6 +803,10 @@ Chỉ xoá những dòng thuộc về user đang đăng nhập; id lạ thì b�
 Tất cả endpoint nhóm này **bắt buộc** có header `Authorization`.
 
 ### 8.1. `POST /api/orders` — đặt hàng
+
+**Quyền:** 🔒 **Đã đăng nhập**, và chỉ thao tác được trên dữ liệu của **chính mình**
+
+**Màn FE:** **Chưa có màn** — trang đặt hàng cần viết mới, route đề xuất `/checkout`
 
 Chuyển các dòng được chọn trong giỏ thành một đơn hàng.
 
@@ -671,6 +851,10 @@ Lỗi ở bất kỳ bước nào → rollback toàn bộ.
 
 ### 8.2. `GET /api/orders` — danh sách đơn của tôi
 
+**Quyền:** 🔒 **Đã đăng nhập**, và chỉ thao tác được trên dữ liệu của **chính mình**
+
+**Màn FE:** **Chưa có màn** — trang "Đơn mua" cần viết mới, route đề xuất `/user/purchase`
+
 | Param | Kiểu | Mặc định | Ý nghĩa |
 |---|---|---|---|
 | `status` | enum | — | Lọc theo trạng thái. Bỏ trống = lấy tất cả |
@@ -692,10 +876,18 @@ phải gọi thêm API cho mỗi đơn.
 
 ### 8.3. `GET /api/orders/{id}` — chi tiết một đơn
 
+**Quyền:** 🔒 **Đã đăng nhập**, và chỉ thao tác được trên dữ liệu của **chính mình**
+
+**Màn FE:** **Chưa có màn** — route đề xuất `/user/purchase/:id`
+
 **Response `200`** — object Order đầy đủ.
 Nếu đơn không thuộc về user đang đăng nhập → `404`.
 
 ### 8.4. `PUT /api/orders/{id}/cancel` — huỷ đơn
+
+**Quyền:** 🔒 **Đã đăng nhập**, và chỉ thao tác được trên dữ liệu của **chính mình**
+
+**Màn FE:** **Chưa có màn** — nút huỷ trong "Đơn mua", route đề xuất `/user/purchase`
 
 **Request**
 ```json
@@ -722,7 +914,12 @@ Nếu đơn không thuộc về user đang đăng nhập → `404`.
 
 ## 9. Nhóm API: Admin
 
-Yêu cầu token có role `ADMIN`. Dùng `@PreAuthorize("hasRole('ADMIN')")`.
+**Quyền:** 👑 **Chỉ ADMIN**
+
+**Màn FE:** không có. Chưa có màn admin ở FE — gọi bằng Postman hoặc seed `data.sql`.
+
+SecurityConfig đã chặn cả nhóm bằng `.requestMatchers("/api/admin/**").hasRole("ADMIN")`.
+Thêm `@PreAuthorize("hasRole('ADMIN')")` ở tầng method là lớp phòng thủ thứ hai.
 Nhóm này cần thiết vì phải có cách tạo dữ liệu sản phẩm/danh mục và xử lý đơn hàng.
 
 | Method | Path | Mô tả |
@@ -751,16 +948,16 @@ Chuyển sai luồng (ví dụ từ `DELIVERED` về `PENDING`) → `409`.
 
 | Hạng mục | Hiện tại | Cần làm |
 |---|---|---|
-| Hình dạng response thành công | ⚠️ Đang bọc trong `ApiResponse<T>` | Bỏ vỏ, trả DTO trần |
-| Hình dạng lỗi | ⚠️ Handler trả `{message, data}` | Đổi sang `ProblemDetail` |
+| Hình dạng response thành công | ✅ Trả DTO trần, không vỏ bọc | — |
+| Hình dạng lỗi | ✅ `ProblemDetail` (RFC 9457), phủ cả lỗi trong filter | — |
 | Đường dẫn | ✅ `/api/*` đã đúng prefix | — |
 | `id` dạng string | ⚠️ `UserResponse` đã đúng | Product/Category/Order làm tương tự |
-| Response register | ❌ Chưa trả token | Trả `{accessToken, expires, user}` |
+| Response register | ✅ Trả `{accessToken, expires, user}` | — |
 | Validation | ✅ Auth đã có `@Valid` | Áp cho các request record còn lại |
 | CORS | ✅ Đã bật cho `localhost:3000` | — |
-| JWT filter | ❌ Chưa có | Viết `OncePerRequestFilter` |
-| Bảo vệ endpoint | ❌ `.anyRequest().permitAll()` | Phân quyền theo nhóm API |
-| JWT secret | ❌ Hardcode trong source | Đưa ra `application.properties` |
+| JWT filter | ✅ `JwtAuthenticationFilter` (`OncePerRequestFilter`) | — |
+| Bảo vệ endpoint | ✅ Phân quyền theo nhóm + `STATELESS` | Thêm rule khi có endpoint mới |
+| JWT secret | ⚠️ Đã ra `application.properties` | Chuyển sang biến môi trường trước khi public repo |
 | Entity Product | ⚠️ Chỉ có `name, price, stock` | Bổ sung ~10 field, đổi `price` sang `Long` |
 | Entity User | ⚠️ Chỉ có `email, password, role` | Bổ sung `name, phone, address, dateOfBirth, avatar, createdAt, updatedAt` |
 | Entity Category | ❌ Chưa có | Tạo mới |
@@ -774,8 +971,8 @@ Chuyển sai luồng (ví dụ từ `DELIVERED` về `PENDING`) → `409`.
 
 | Bước | Nội dung | Kiến thức Java/Spring học được |
 |---|---|---|
-| **1** | Nền tảng chung: `GlobalExceptionHandler` trả `ProblemDetail`, validation, bật CORS | `@RestControllerAdvice`, `ProblemDetail`, CORS |
-| **2** | JWT filter + phân quyền thật sự | `OncePerRequestFilter`, `SecurityContextHolder`, filter chain |
+| **1** ✅ | Nền tảng chung: `GlobalExceptionHandler` trả `ProblemDetail`, validation, bật CORS | `@RestControllerAdvice`, `ProblemDetail`, CORS |
+| **2** ✅ | JWT filter + phân quyền thật sự | `OncePerRequestFilter`, `SecurityContextHolder`, filter chain, `AuthenticationEntryPoint` |
 | **3** | Hoàn thiện User + `GET/PUT /api/users/me` | `@AuthenticationPrincipal`, DTO mapping, JPA auditing |
 | **4** | Category CRUD | Quan hệ `@ManyToOne` / `@OneToMany` |
 | **5** | Nâng cấp Product: đủ field, phân trang, lọc, sắp xếp, soft delete | `Pageable`, `Specification`, `@SQLRestriction` |
@@ -790,7 +987,7 @@ Sau bước 7 là đã đủ để FE chạy hoàn chỉnh với BE này.
 
 ## 12. Danh sách việc cần sửa ở FE khi tích hợp
 
-FE hiện tại được viết theo contract của API công khai dùng trong khoá học. Để dùng BE này, cần sửa:
+FE hiện tại được viết theo một contract API cũ. Để dùng BE này, cần sửa:
 
 ### 12.1. `FE/src/utils/http.ts`
 

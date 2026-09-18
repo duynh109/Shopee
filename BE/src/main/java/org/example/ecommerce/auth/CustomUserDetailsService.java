@@ -2,6 +2,7 @@ package org.example.ecommerce.auth;
 
 import org.example.ecommerce.user.User;
 import org.example.ecommerce.user.UserRepository;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
@@ -25,7 +26,7 @@ public class CustomUserDetailsService implements UserDetailsService {
         return org.springframework.security.core.userdetails.User.builder()
                 .username(user.getEmail())
                 .password(user.getPassword())
-                .authorities(List.of(() -> "ROLE_" + user.getRole()))
+                .authorities(List.of(new SimpleGrantedAuthority("ROLE_" + user.getRole())))
                 .build();
     }
 }

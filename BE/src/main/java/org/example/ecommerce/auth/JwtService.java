@@ -41,15 +41,6 @@ public class JwtService {
         return parseClaims(token).getSubject();
     }
 
-    public boolean isTokenValid(String token) {
-        try {
-            Claims claims = parseClaims(token);
-            return !claims.getExpiration().before(new Date());
-        } catch (Exception e) {
-            return false;
-        }
-    }
-
     private Claims parseClaims(String token) {
         return Jwts.parser()
                 .verifyWith(secretKey)
