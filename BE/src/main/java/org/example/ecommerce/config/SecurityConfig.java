@@ -58,6 +58,11 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.PUT, "/api/products/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.DELETE, "/api/products/**").hasRole("ADMIN")
 
+                        // ---- Phải đăng nhập, role nào cũng được ----
+                        // Quyền trên từng bản ghi ("profile này có phải của bạn?") không phải
+                        // việc của SecurityConfig — /me tự giải quyết bằng danh tính trong token.
+                        .requestMatchers("/api/users/**").authenticated()
+
                         // ---- Còn lại: phải đăng nhập ----
                         .anyRequest().authenticated());
         return http.build();

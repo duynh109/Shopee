@@ -14,7 +14,7 @@ và **không** bám theo contract cũ đó. Bước tích hợp sẽ sửa front
 
 | | Trạng thái |
 |---|---|
-| **Backend** | Đang làm — xong 2/9 bước của lộ trình. Hiện có: đăng ký, đăng nhập, đăng xuất bằng JWT; phân quyền USER/ADMIN theo từng nhóm endpoint; xử lý lỗi theo RFC 9457; CRUD sản phẩm ở mức tối thiểu |
+| **Backend** | Đang làm — xong 3/9 bước của lộ trình. Hiện có: đăng ký, đăng nhập, đăng xuất bằng JWT; phân quyền USER/ADMIN theo từng nhóm endpoint; xử lý lỗi theo RFC 9457; xem và sửa hồ sơ cá nhân; CRUD sản phẩm ở mức tối thiểu |
 | **Frontend** | Xong phần danh sách sản phẩm, chi tiết sản phẩm, tìm kiếm, lọc, phân trang, đăng nhập/đăng ký. Giỏ hàng và trang cá nhân còn là stub. Vẫn đang gọi contract API cũ, chưa trỏ sang backend này |
 | **Tích hợp** | Chưa bắt đầu — danh sách việc cần sửa ở `docs/API_SPEC.md` mục 12 |
 
@@ -64,7 +64,7 @@ Vài quyết định thiết kế đáng chú ý ở backend:
 ### Backend
 
 ```bash
-mysql -u root -p -e "CREATE DATABASE ecommerce_db;"
+mysql -u root -p -e "CREATE DATABASE shopee_db CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;"
 
 cd BE
 # sửa datasource và jwt.secret trong src/main/resources/application.properties
@@ -99,7 +99,7 @@ Chạy ở `http://localhost:3000` — origin này đã được cấu hình COR
 |---|---|---|
 | ✅ | 1. Nền tảng: xử lý lỗi theo RFC 9457, validation, CORS | |
 | ✅ | 2. JWT filter + phân quyền theo nhóm endpoint | |
-| ⬜ | 3. Hoàn thiện User, `GET/PUT /api/users/me` | |
+| ✅ | 3. Hoàn thiện User, `GET/PUT /api/users/me` | |
 | ⬜ | 4. Category CRUD | |
 | ⬜ | 5. Nâng cấp Product: đủ field, phân trang, lọc, sắp xếp, soft delete | |
 | ⬜ | 6. Giỏ hàng | |

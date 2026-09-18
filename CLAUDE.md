@@ -14,6 +14,12 @@ FE/     React + TypeScript + Vite — port 3000
 | `docs/DATABASE_DESIGN.md` | Schema v1 (7 bảng) và lý do đằng sau từng quyết định |
 | `docs/SYSTEM_DESIGN.md` | Lộ trình mở rộng, chưa cần cho v1 |
 
+## Đang làm tới đâu
+
+**Nguồn duy nhất về tiến độ:** cột trạng thái ở `docs/API_SPEC.md` **§10** (từng hạng mục) và **§11**
+(lộ trình 9 bước, bước nào xong có dấu ✅). §1.10 có cột `BE` cho từng endpoint. Đọc ba chỗ đó trước
+khi làm gì — đừng suy ra tiến độ từ code, và khi làm xong một bước thì cập nhật lại cả ba.
+
 ## Thứ tự làm việc
 
 **Làm BE cho đúng và đầy đủ trước, FE sửa sau.** FE hiện vẫn gọi contract API cũ

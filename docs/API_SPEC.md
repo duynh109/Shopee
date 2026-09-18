@@ -109,6 +109,12 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiJ9...
 
 Đây là chuẩn RFC 6750, được Postman, Swagger UI và mọi thư viện HTTP hỗ trợ sẵn.
 
+**Payload hiện tại chỉ có `sub` (email), `iat`, `exp` — không có `role`.** Quyền được đọc từ DB ở
+mỗi request nên đổi `role` có hiệu lực ngay. Dự kiến đưa `role` vào payload ở bước 9, xem §3.4.
+
+> Payload JWT chỉ được **Base64**, không phải mã hoá — ai cầm được token đều đọc được nội dung mà
+> không cần secret. Chữ ký chỉ chống **sửa**, không chống **đọc**. Đừng đặt thông tin nhạy cảm vào đó.
+
 > Nên viết filter chấp nhận **cả hai** dạng (có và không có tiền tố) để đỡ vướng lúc test:
 > ```java
 > String header = request.getHeader("Authorization");
@@ -257,9 +263,9 @@ Ba mức quyền dùng trong toàn bộ tài liệu này:
 | `POST` | `/api/auth/login` | 🌐 Công khai | ✅ | `Login` | `/login` |
 | `POST` | `/api/auth/logout` | 🔒 Đã đăng nhập | ✅ | `Header` ³ | mọi màn `MainLayout` |
 | `POST` | `/api/auth/refresh-token` | 🌐 Công khai ¹ | ⬜ b9 | interceptor `utils/http.ts` ⁴ | — |
-| `GET` | `/api/users/me` | 🔒 Đã đăng nhập ² | ⬜ b3 | `Profile` *(stub)* | `/profile` |
-| `PUT` | `/api/users/me` | 🔒 Đã đăng nhập ² | ⬜ b3 | `Profile` *(stub)* | `/profile` |
-| `POST` | `/api/users/me/avatar` | 🔒 Đã đăng nhập ² | ⬜ b3 | `Profile` *(stub)* | `/profile` |
+| `GET` | `/api/users/me` | 🔒 Đã đăng nhập ² | ✅ | `Profile` *(stub)* | `/profile` |
+| `PUT` | `/api/users/me` | 🔒 Đã đăng nhập ² | ✅ | `Profile` *(stub)* | `/profile` |
+| `POST` | `/api/users/me/avatar` | 🔒 Đã đăng nhập ² | ⬜ b8 ⁹ | `Profile` *(stub)* | `/profile` |
 | `GET` | `/api/products` | 🌐 Công khai | ✅ | `ProductList`, `ProductDetail` ⁵ | `/`, `/:nameId` |
 | `GET` | `/api/products/{id}` | 🌐 Công khai | ✅ | `ProductDetail` | `/:nameId` |
 | `POST` | `/api/products` | 👑 ADMIN | ⚠️ §5.3 | chưa có màn admin ⁶ | — |
@@ -302,6 +308,9 @@ hợp lệ. Nó tự xác thực bằng refresh token nằm trong body.
 `data.sql`. Màn admin nếu làm thì là một app riêng, không nhét vào FE người mua.
 
 ⁷ `Cart` gọi để hiển thị giỏ; `Header` gọi để hiện con số trên icon giỏ hàng.
+
+⁹ **Dời sang bước 8.** §11 xếp toàn bộ phần upload ảnh (`MultipartFile`, nơi lưu file, serve ảnh
+tĩnh, giới hạn dung lượng, chặn đuôi file) vào bước 8; trước đây ô này ghi nhầm là b3.
 
 ⁸ **Route đề xuất, chưa tồn tại** trong `FE/src/constants/path.ts`. Ghi ở đây để khi dựng màn thì
 dùng đúng đường dẫn đã thống nhất, khỏi phải sửa link sau.
@@ -558,6 +567,34 @@ Khi làm refresh token, `/login` và `/register` trả thêm `refreshToken`, và
 ```
 FE dựa vào `type === '/errors/token-expired'` để tự động gọi refresh rồi retry request.
 
+#### Chốt kèm bước này: đưa `role` vào payload access token
+
+**Quyết định (chốt 2026-09-18): chuyển `role` vào trong JWT, nhưng chỉ khi làm refresh token —
+không làm sớm hơn.**
+
+Hiện tại payload chỉ có `sub` (email), `iat`, `exp`. `JwtAuthenticationFilter` phải gọi
+`CustomUserDetailsService` để truy vấn `users` lấy `role` ở **mỗi request**. Đo trên máy local:
+query đó tốn **~0.83 ms/request** (3.85 ms có query so với 3.01 ms không query, mỗi bản 5 lần đo,
+hai dải không giao nhau).
+
+Vì sao chưa làm ngay: nhét `role` vào token biến token thành **bản cache của quyền hạn**, và
+`jwt.expiration-seconds` hiện là **86400** (24 giờ). Nghĩa là cách chức một admin hoặc khoá một tài
+khoản sẽ **không có hiệu lực trong tối đa 24 giờ**. Với thiết kế hiện tại, sửa `role` trong DB có
+hiệu lực ngay lập tức ở request kế tiếp.
+
+Vì sao làm được khi có refresh token: access token lúc đó rút xuống **5–15 phút** và mang sẵn
+`role` (không hỏi DB), còn refresh token sống dài và **có** kiểm tra DB mỗi lần làm mới. Cửa sổ sai
+lệch quyền hạn co từ 24 giờ xuống còn TTL của access token. Ba thứ — `role` trong token, TTL ngắn,
+refresh token — ràng buộc nhau, phải làm cùng lúc.
+
+Khi làm, cần sửa: `JwtService.generateToken()` thêm claim `role`; `JwtAuthenticationFilter` dựng
+`UserDetails` thẳng từ claim thay vì gọi `CustomUserDetailsService`; hạ `jwt.expiration-seconds`.
+
+> **Việc nên làm trước, rẻ hơn và không đánh đổi gì:** `GET /api/users/me` hiện chạy **hai câu
+> SELECT giống hệt nhau** — một từ filter, một từ `UserService`. Viết một `UserPrincipal` bọc thẳng
+> entity `User` là xoá được câu thứ hai, lợi ích tương đương mà không hề động tới khả năng thu hồi
+> quyền.
+
 ---
 
 ## 4. Nhóm API: User / Profile
@@ -596,11 +633,19 @@ Cập nhật profile. Tất cả field đều optional — gửi field nào cậ
 ```
 - Đổi mật khẩu dùng chung endpoint này: gửi kèm `password` (mật khẩu hiện tại) + `newPassword`.
 - Nếu `password` sai → `422` với `errors: { "password": "Mật khẩu không đúng" }`.
-- **Không** cho đổi `email` và `roles` qua endpoint này.
+  Gửi `newPassword` mà thiếu `password` cũng `422`, với `errors.password = "Vui lòng nhập mật khẩu hiện tại"`.
+- **Không** cho đổi `email` và `roles` qua endpoint này. Request DTO không khai báo hai field đó,
+  nên client có gửi kèm thì Jackson cũng bỏ qua — không cần code chặn riêng.
+- **`null` nghĩa là "đừng đổi", không phải "xoá về trống".** JSON không gửi field và JSON gửi
+  `field: null` đều đến BE dưới dạng `null`, nên v1 không phân biệt được hai ca đó. Hệ quả: không có
+  cách nào xoá `name`/`phone`/`address` về `null` qua API. Màn `Profile` không có thao tác nào cần
+  việc đó nên chấp nhận được; muốn làm đúng thì phải dùng `JsonNullable` cho từng field.
+- **Đổi mật khẩu không thu hồi được token cũ.** JWT là stateless: token cấp trước đó vẫn hợp lệ cho
+  tới khi hết hạn (24 giờ). Xử lý triệt để cần refresh token hoặc danh sách chặn — bước 9.
 
 **Response `200`** — user sau khi cập nhật.
 
-### 4.3. `POST /api/users/me/avatar`
+### 4.3. `POST /api/users/me/avatar` *(bước 8)*
 
 **Quyền:** 🔒 **Đã đăng nhập**, và chỉ thao tác được trên dữ liệu của **chính mình**
 
@@ -959,7 +1004,7 @@ Chuyển sai luồng (ví dụ từ `DELIVERED` về `PENDING`) → `409`.
 | Bảo vệ endpoint | ✅ Phân quyền theo nhóm + `STATELESS` | Thêm rule khi có endpoint mới |
 | JWT secret | ⚠️ Đã ra `application.properties` | Chuyển sang biến môi trường trước khi public repo |
 | Entity Product | ⚠️ Chỉ có `name, price, stock` | Bổ sung ~10 field, đổi `price` sang `Long` |
-| Entity User | ⚠️ Chỉ có `email, password, role` | Bổ sung `name, phone, address, dateOfBirth, avatar, createdAt, updatedAt` |
+| Entity User | ✅ Đủ field + `@CreatedDate`/`@LastModifiedDate` | — |
 | Entity Category | ❌ Chưa có | Tạo mới |
 | Entity CartItem | ❌ Chưa có | Tạo mới |
 | Entity Order / OrderItem | ❌ Chưa có | Tạo mới |
@@ -973,13 +1018,13 @@ Chuyển sai luồng (ví dụ từ `DELIVERED` về `PENDING`) → `409`.
 |---|---|---|
 | **1** ✅ | Nền tảng chung: `GlobalExceptionHandler` trả `ProblemDetail`, validation, bật CORS | `@RestControllerAdvice`, `ProblemDetail`, CORS |
 | **2** ✅ | JWT filter + phân quyền thật sự | `OncePerRequestFilter`, `SecurityContextHolder`, filter chain, `AuthenticationEntryPoint` |
-| **3** | Hoàn thiện User + `GET/PUT /api/users/me` | `@AuthenticationPrincipal`, DTO mapping, JPA auditing |
+| **3** ✅ | Hoàn thiện User + `GET/PUT /api/users/me` | `@AuthenticationPrincipal`, DTO mapping, JPA auditing |
 | **4** | Category CRUD | Quan hệ `@ManyToOne` / `@OneToMany` |
 | **5** | Nâng cấp Product: đủ field, phân trang, lọc, sắp xếp, soft delete | `Pageable`, `Specification`, `@SQLRestriction` |
 | **6** | Cart | Ràng buộc `UNIQUE`, logic cộng dồn |
 | **7** | Order: đặt hàng + huỷ đơn | `@Transactional`, snapshot, race condition tồn kho |
 | **8** | Admin + upload ảnh | `@PreAuthorize`, `MultipartFile`, máy trạng thái |
-| **9** | *(Tuỳ chọn)* Refresh token | Token lifecycle |
+| **9** | *(Tuỳ chọn)* Refresh token + đưa `role` vào payload token, hạ TTL — xem §3.4 | Token lifecycle |
 
 Sau bước 7 là đã đủ để FE chạy hoàn chỉnh với BE này.
 
