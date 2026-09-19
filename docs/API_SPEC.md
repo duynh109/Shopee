@@ -761,6 +761,54 @@ Cả ba trả `ProblemDetail` chuẩn khi lỗi: `401` nếu thiếu token, `403
 ```
 > Mảng trực tiếp, không bọc thêm gì. Danh mục ít và ổn định nên không phân trang.
 
+### 6.2. Ba endpoint quản trị danh mục
+
+Đường dẫn và bảng tổng hợp ở §9; phần này chốt hợp đồng chi tiết.
+
+**Quyền:** 👑 **ADMIN** cho cả ba. **Màn FE:** chưa có màn admin.
+
+| Method | Path | Thành công | Lỗi |
+|---|---|---|---|
+| `POST` | `/api/admin/categories` | `201` + object vừa tạo | `422` trùng tên · `422` tên rỗng/quá 160 |
+| `PUT` | `/api/admin/categories/{id}` | `200` + object sau khi sửa | `404` không có id · `422` trùng tên danh mục **khác** |
+| `DELETE` | `/api/admin/categories/{id}` | `204` body rỗng | `404` không có id · `409` còn sản phẩm thuộc danh mục |
+
+Body của `POST` và `PUT` đều là `{ "name": "Áo thun" }`.
+
+**Vì sao trùng tên là `422` chứ không phải `409`:** theo §1.6, `422` là *dữ liệu người dùng nhập vào
+không hợp lệ* — mà "tên này đã có người dùng rồi" đúng là loại đó, y hệt ca đăng ký trùng email đang
+trả `422` kèm `errors.email`. Còn `409` dành cho *trạng thái hệ thống không cho phép*, đúng với ca xoá
+danh mục còn sản phẩm: tên hợp lệ, danh mục tồn tại, chỉ là không được xoá lúc này.
+
+```json
+POST /api/admin/categories  →  422
+{ "type": "/errors/validation", "title": "Dữ liệu không hợp lệ", "status": 422,
+  "errors": { "name": "Tên danh mục đã tồn tại" } }
+```
+
+> **Bẫy ở `PUT`:** kiểm tra trùng phải loại chính bản ghi đang sửa ra, nếu không thì sửa danh mục mà
+> giữ nguyên tên cũ sẽ bị báo "tên đã tồn tại" — nó tìm thấy chính nó. Dùng
+> `existsByNameAndIdNot(name, id)` chứ không phải `existsByName(name)`.
+
+### 6.3. Chốt thiết kế cho bước 4 *(2026-09-19)*
+
+- **`products.category_id` là `NOT NULL`** theo đúng `DATABASE_DESIGN.md` §3.3. Kéo theo:
+  `CreateProductRequest` phải nhận thêm `categoryId`, và `ProductService` tra cứu danh mục, không
+  thấy thì `404`.
+- **Quan hệ một chiều.** Chỉ `Product` có `@ManyToOne(fetch = FetchType.LAZY)`; **không** thêm
+  `@OneToMany` vào `Category`. Kiểm tra "danh mục còn sản phẩm không" dùng
+  `productRepository.existsByCategoryId(id)` — một câu đếm, khỏi nạp cả danh sách, và tránh luôn hai
+  cái bẫy của quan hệ hai chiều là JSON đệ quy vô tận với `LazyInitializationException`.
+- **`@ManyToOne` mặc định là `EAGER`** (ngược với `@OneToMany` mặc định `LAZY`) nên phải ghi `LAZY`
+  tường minh.
+- **Nợ kỹ thuật chấp nhận tạm:** `ProductController` đang trả thẳng entity `Product`, nên thêm quan hệ
+  này là JSON sản phẩm sẽ lòi ra cả object danh mục kèm `createdAt`/`updatedAt`. Bước 5 xử lý bằng
+  `ProductResponse`. Cũng ở bước 5 mới xử lý N+1: `GET /api/products` hiện chạy một câu lấy danh sách
+  rồi thêm một câu cho mỗi danh mục.
+- **`SecurityConfig` không cần sửa** cho bước này: `/api/admin/**` đã có `hasRole("ADMIN")` và
+  `GET /api/categories/**` đã `permitAll`. Đây là ngoại lệ với quy tắc "thêm endpoint phải sửa ba chỗ"
+  ở `CLAUDE.md` — vẫn phải curl kiểm chứng chứ đừng tin suông.
+
 ---
 
 ## 7. Nhóm API: Cart (giỏ hàng)

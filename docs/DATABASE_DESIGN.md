@@ -159,11 +159,15 @@ CREATE TABLE users (
 ```sql
 CREATE TABLE categories (
     id         BIGINT AUTO_INCREMENT PRIMARY KEY,
-    name       VARCHAR(160) NOT NULL,
+    name       VARCHAR(160) NOT NULL UNIQUE,
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL
 );
 ```
+
+`name` để `UNIQUE` (chốt 2026-09-19): hai danh mục cùng tên "Áo thun" là lỗi dữ liệu, và thanh lọc
+ở FE sẽ hiện hai dòng giống hệt nhau. Tầng service vẫn kiểm tra trước để trả lỗi thân thiện, nhưng
+ràng buộc DB mới chặn được hai request tạo cùng lúc — đúng nguyên tắc mục 4.6.
 
 Danh mục một cấp. Muốn nhiều cấp (Thời trang nam → Áo → Áo thun) thì thêm
 `parent_id BIGINT NULL REFERENCES categories(id)` — bảng tự tham chiếu chính nó.

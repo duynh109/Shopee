@@ -8,11 +8,11 @@
         <version>4.1.0</version>
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
-    <groupId>org.example</groupId>
-    <artifactId>ecommerce</artifactId>
+    <groupId>com.duynh</groupId>
+    <artifactId>shopee</artifactId>
     <version>0.0.1-SNAPSHOT</version>
-    <name>ecommerce</name>
-    <description>ecommerce</description>
+    <name>shopee</name>
+    <description>Shopee clone — REST API</description>
     <url/>
     <licenses>
         <license/>
