@@ -30,7 +30,7 @@ public class User {
     private Long id;
 
     /** Định danh đăng nhập, cố ý không cho đổi — xem API_SPEC §4.2. */
-    @Column(nullable = false, unique = true, length = 160)
+    @Column(nullable = false, unique = true)
     private String email;
 
     @Setter
@@ -45,7 +45,6 @@ public class User {
     private String role; // "USER" hoặc "ADMIN"
 
     @Setter
-    @Column(length = 160)
     private String name;
 
     @Setter
@@ -53,14 +52,12 @@ public class User {
     private String phone;
 
     @Setter
-    @Column(length = 255)
     private String address;
 
     @Setter
     private LocalDate dateOfBirth;
 
     @Setter
-    @Column(length = 255)
     private String avatar;
 
     /** Do AuditingEntityListener điền, không setter để không ai sửa được dấu vết kiểm toán. */

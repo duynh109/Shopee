@@ -3,6 +3,8 @@ package com.duynh.shopee.product;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
+import jakarta.validation.Valid;
+
 import java.util.List;
 
 @RestController
@@ -26,13 +28,13 @@ public class ProductController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public Product createProduct(@RequestBody CreateProductRequest request) {
-        return productService.createProduct(request.name(), request.price(), request.stock());
+    public Product createProduct(@Valid @RequestBody CreateProductRequest request) {
+        return productService.createProduct(request);
     }
 
     @PutMapping("/{id}")
-    public Product updateProduct(@PathVariable Long id, @RequestBody CreateProductRequest request) {
-        return productService.updateProduct(id, request.name(), request.price(), request.stock());
+    public Product updateProduct(@PathVariable Long id, @Valid @RequestBody CreateProductRequest request) {
+        return productService.updateProduct(id, request);
     }
 
     @DeleteMapping("/{id}")

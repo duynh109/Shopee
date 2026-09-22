@@ -1,4 +1,7 @@
 package com.duynh.shopee.product;
 
-public record CreateProductRequest(String name, double price, int stock) {
+import jakarta.validation.constraints.NotNull;
+
+public record CreateProductRequest(String name, double price, int stock,
+        @NotNull(message = "Vui lòng chọn danh mục") Long categoryId) {
 }

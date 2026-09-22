@@ -2,6 +2,8 @@ package com.duynh.shopee.user;
 
 import java.time.LocalDate;
 
+import com.duynh.shopee.validation.MaxBytes;
+
 import jakarta.validation.constraints.Past;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
@@ -18,7 +20,7 @@ import jakarta.validation.constraints.Size;
  * mà không cần viết thêm dòng nào.
  */
 public record UpdateProfileRequest(
-        @Size(max = 160, message = "Tên không được quá 160 kí tự")
+        @Size(max = 255, message = "Tên không được quá 255 kí tự")
         String name,
 
         @Pattern(regexp = "\\d{10,11}", message = "Số điện thoại không hợp lệ")
@@ -36,6 +38,7 @@ public record UpdateProfileRequest(
         /** Mật khẩu hiện tại — chỉ cần khi muốn đổi mật khẩu. */
         String password,
 
-        @Size(min = 6, max = 160, message = "Độ dài từ 6-160 kí tự")
+        @Size(min = 6, message = "Độ dài tối thiểu 6 kí tự")
+        @MaxBytes(value = 72, message = "Mật khẩu tối đa 72 kí tự")
         String newPassword) {
 }

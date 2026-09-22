@@ -1,5 +1,7 @@
 package com.duynh.shopee.product;
 
+import com.duynh.shopee.category.Category;
+
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -24,10 +26,15 @@ public class Product {
     @Column(nullable = false)
     private int stock;
 
-    public Product(String name, double price, int stock) {
+    @ManyToOne(optional = false, fetch = FetchType.LAZY)
+    @JoinColumn(name = "category_id", nullable = false)
+    private Category category;
+
+    public Product(String name, double price, int stock, Category category) {
         this.name = name;
         this.price = price;
         this.stock = stock;
+        this.category = category;
     }
 
 }

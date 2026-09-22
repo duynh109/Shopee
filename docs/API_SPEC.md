@@ -227,10 +227,29 @@ BE **luôn phải validate** dù FE đã validate (không bao giờ tin client):
 
 | Field | Rule | Thông báo mẫu |
 |---|---|---|
-| `email` | Bắt buộc, đúng định dạng email, độ dài 5–160 | `Email không đúng định dạng` |
-| `password` | Bắt buộc, độ dài 6–160 | `Độ dài từ 6-160 kí tự` |
+| `email` | Bắt buộc, đúng định dạng email, độ dài 5–255 ¹ | `Email không hợp lệ` |
+| `password` | Bắt buộc, tối thiểu 6 kí tự, **tối đa 72 byte** ² | `Mật khẩu tối đa 72 kí tự` |
 | `quantity` | Số nguyên ≥ 1, ≤ tồn kho | `Số lượng vượt quá số lượng sản phẩm` |
 | `recipientPhone` | Bắt buộc khi đặt hàng, 10–11 chữ số | `Số điện thoại không hợp lệ` |
+
+¹ `@Email` của Hibernate Validator còn tự áp giới hạn của RFC: phần trước `@` tối đa 64 kí tự.
+Nên một email 200 kí tự với phần local quá dài bị chặn vì *sai định dạng*, không phải vì *quá dài*.
+
+² **Tính theo byte, không phải kí tự.** BCrypt chỉ băm được 72 byte đầu; `BCryptPasswordEncoder`
+ném `IllegalArgumentException` khi vượt, tức `500` nếu không chặn từ tầng validate. Một kí tự
+tiếng Việt có dấu chiếm 3 byte UTF-8 và một emoji chiếm 4, nên 25 kí tự có dấu đã là 75 byte.
+`@Size` đếm kí tự nên không đủ — dùng annotation riêng `@MaxBytes` ở
+`BE/.../validation/MaxBytes.java`.
+
+Trần trên do **một mình** `@MaxBytes` giữ, không đặt thêm `@Size(max = ...)` song song: khi hai
+luật cùng vi phạm thì `GlobalExceptionHandler` giữ lỗi nào tới trước, mà thứ tự đó không xác định
+— mật khẩu 200 kí tự ASCII có lúc nhận câu nói về dấu. Thay vào đó `MaxBytesValidator` tự đổi câu
+theo tình huống:
+
+| Đầu vào | Thông báo |
+|---|---|
+| dài hơn 72 **kí tự** | `Mật khẩu tối đa 72 kí tự` |
+| ngắn hơn 72 kí tự nhưng vượt 72 **byte** | `Mật khẩu quá dài, vui lòng bớt kí tự có dấu hoặc kí tự đặc biệt` |
 
 ### 1.8. Kiểu dữ liệu
 
@@ -271,7 +290,7 @@ Ba mức quyền dùng trong toàn bộ tài liệu này:
 | `POST` | `/api/products` | 👑 ADMIN | ⚠️ §5.3 | chưa có màn admin ⁶ | — |
 | `PUT` | `/api/products/{id}` | 👑 ADMIN | ⚠️ §5.3 | chưa có màn admin ⁶ | — |
 | `DELETE` | `/api/products/{id}` | 👑 ADMIN | ⚠️ §5.3 | chưa có màn admin ⁶ | — |
-| `GET` | `/api/categories` | 🌐 Công khai | ⬜ b4 | `ProductList` (thanh lọc) | `/` |
+| `GET` | `/api/categories` | 🌐 Công khai | ✅ | `ProductList` (thanh lọc) | `/` |
 | `GET` | `/api/cart` | 🔒 Đã đăng nhập ² | ⬜ b6 | `Cart` *(stub)*, `Header` ⁷ | `/cart` + mọi màn |
 | `POST` | `/api/cart/items` | 🔒 Đã đăng nhập ² | ⬜ b6 | `ProductDetail` (Thêm vào giỏ) | `/:nameId` |
 | `PUT` | `/api/cart/items/{id}` | 🔒 Đã đăng nhập ² | ⬜ b6 | `Cart` (ô số lượng) | `/cart` |
@@ -281,9 +300,9 @@ Ba mức quyền dùng trong toàn bộ tài liệu này:
 | `GET` | `/api/orders` | 🔒 Đã đăng nhập ² | ⬜ b7 | **chưa có màn** — Đơn mua | `/user/purchase` ⁸ |
 | `GET` | `/api/orders/{id}` | 🔒 Đã đăng nhập ² | ⬜ b7 | **chưa có màn** — chi tiết đơn | `/user/purchase/:id` ⁸ |
 | `PUT` | `/api/orders/{id}/cancel` | 🔒 Đã đăng nhập ² | ⬜ b7 | **chưa có màn** — Đơn mua | `/user/purchase` ⁸ |
-| `POST` | `/api/admin/categories` | 👑 ADMIN | ⬜ b4 | chưa có màn admin ⁶ | — |
-| `PUT` | `/api/admin/categories/{id}` | 👑 ADMIN | ⬜ b4 | chưa có màn admin ⁶ | — |
-| `DELETE` | `/api/admin/categories/{id}` | 👑 ADMIN | ⬜ b4 | chưa có màn admin ⁶ | — |
+| `POST` | `/api/admin/categories` | 👑 ADMIN | ✅ | chưa có màn admin ⁶ | — |
+| `PUT` | `/api/admin/categories/{id}` | 👑 ADMIN | ✅ | chưa có màn admin ⁶ | — |
+| `DELETE` | `/api/admin/categories/{id}` | 👑 ADMIN | ✅ | chưa có màn admin ⁶ | — |
 | `POST` | `/api/admin/products` | 👑 ADMIN | ⬜ b5 | chưa có màn admin ⁶ | — |
 | `PUT` | `/api/admin/products/{id}` | 👑 ADMIN | ⬜ b5 | chưa có màn admin ⁶ | — |
 | `DELETE` | `/api/admin/products/{id}` | 👑 ADMIN | ⬜ b5 | chưa có màn admin ⁶ | — |
@@ -569,7 +588,7 @@ FE dựa vào `type === '/errors/token-expired'` để tự động gọi refres
 
 #### Chốt kèm bước này: đưa `role` vào payload access token
 
-**Quyết định (chốt 2026-09-18): chuyển `role` vào trong JWT, nhưng chỉ khi làm refresh token —
+**Quyết định: chuyển `role` vào trong JWT, nhưng chỉ khi làm refresh token —
 không làm sớm hơn.**
 
 Hiện tại payload chỉ có `sub` (email), `iat`, `exp`. `JwtAuthenticationFilter` phải gọi
@@ -769,7 +788,7 @@ Cả ba trả `ProblemDetail` chuẩn khi lỗi: `401` nếu thiếu token, `403
 
 | Method | Path | Thành công | Lỗi |
 |---|---|---|---|
-| `POST` | `/api/admin/categories` | `201` + object vừa tạo | `422` trùng tên · `422` tên rỗng/quá 160 |
+| `POST` | `/api/admin/categories` | `201` + object vừa tạo | `422` trùng tên · `422` tên rỗng/quá 255 |
 | `PUT` | `/api/admin/categories/{id}` | `200` + object sau khi sửa | `404` không có id · `422` trùng tên danh mục **khác** |
 | `DELETE` | `/api/admin/categories/{id}` | `204` body rỗng | `404` không có id · `409` còn sản phẩm thuộc danh mục |
 
@@ -790,7 +809,7 @@ POST /api/admin/categories  →  422
 > giữ nguyên tên cũ sẽ bị báo "tên đã tồn tại" — nó tìm thấy chính nó. Dùng
 > `existsByNameAndIdNot(name, id)` chứ không phải `existsByName(name)`.
 
-### 6.3. Chốt thiết kế cho bước 4 *(2026-09-19)*
+### 6.3. Chốt thiết kế cho bước 4
 
 - **`products.category_id` là `NOT NULL`** theo đúng `DATABASE_DESIGN.md` §3.3. Kéo theo:
   `CreateProductRequest` phải nhận thêm `categoryId`, và `ProductService` tra cứu danh mục, không
@@ -801,13 +820,50 @@ POST /api/admin/categories  →  422
   cái bẫy của quan hệ hai chiều là JSON đệ quy vô tận với `LazyInitializationException`.
 - **`@ManyToOne` mặc định là `EAGER`** (ngược với `@OneToMany` mặc định `LAZY`) nên phải ghi `LAZY`
   tường minh.
-- **Nợ kỹ thuật chấp nhận tạm:** `ProductController` đang trả thẳng entity `Product`, nên thêm quan hệ
-  này là JSON sản phẩm sẽ lòi ra cả object danh mục kèm `createdAt`/`updatedAt`. Bước 5 xử lý bằng
-  `ProductResponse`. Cũng ở bước 5 mới xử lý N+1: `GET /api/products` hiện chạy một câu lấy danh sách
-  rồi thêm một câu cho mỗi danh mục.
+- **Nợ kỹ thuật chấp nhận tạm:** `ProductController` đang trả thẳng entity `Product`, nên JSON sản
+  phẩm lòi ra cả object danh mục kèm `createdAt`/`updatedAt`. Bước 5 xử lý bằng `ProductResponse`.
+  N+1 thì **không** để lại tới bước 5 — xem §6.4.
 - **`SecurityConfig` không cần sửa** cho bước này: `/api/admin/**` đã có `hasRole("ADMIN")` và
   `GET /api/categories/**` đã `permitAll`. Đây là ngoại lệ với quy tắc "thêm endpoint phải sửa ba chỗ"
   ở `CLAUDE.md` — vẫn phải curl kiểm chứng chứ đừng tin suông.
+
+### 6.4. Nạp kèm danh mục: `@EntityGraph` trên từng câu query
+
+`Product.category` khai `LAZY`, nên sau một `findAll()` thuần, field đó **không** giữ một `Category`
+mà giữ một **proxy** — class con do Hibernate sinh lúc chạy, bên trong rỗng, chỉ nhớ khoá ngoại.
+Đo được bằng cách in class thật:
+
+```
+POST (tự tay getEntityById)  →  com.duynh.shopee.category.Category
+GET  (qua findAll)           →  com.duynh.shopee.category.Category$HibernateProxy
+```
+
+Proxy gây hai chuyện, và cả hai đều lộ ra vì `ProductController` trả thẳng entity:
+
+1. **Rác trong JSON.** Proxy có thêm method `getHibernateLazyInitializer()`; Jackson soi class lúc
+   chạy nên coi đó là một property và serialize luôn:
+   `"category": { …, "hibernateLazyInitializer": {}, … }`
+2. **N+1.** Jackson gọi `getName()` trên proxy thì Hibernate mới chạy `select … from categories
+   where id = ?`. Đo thực tế: 5 sản phẩm thuộc 4 danh mục → **5 câu SQL**.
+
+Lazy loading vẫn chạy được sau khi service đã return là nhờ `spring.jpa.open-in-view` bật mặc định
+(Spring Boot cảnh báo hẳn một dòng lúc khởi động) — session Hibernate còn mở tới lúc render response.
+
+**Cách xử lý đã chọn:** `@EntityGraph(attributePaths = "category")` ghi đè lên `findAll()` và
+`findById()` trong `ProductRepository`. Hibernate nạp kèm danh mục trong **cùng một câu SELECT** bằng
+JOIN, nên field giữ `Category` thật. Đo lại: `GET /api/products` và `GET /api/products/{id}` đều còn
+**1 câu SQL**, JSON hết field rác.
+
+Quan hệ **vẫn khai `LAZY`**: đó là mặc định cho mọi truy vấn khác, `@EntityGraph` chỉ nói "riêng câu
+này nạp kèm". Annotation gắn lên **từng câu query**, không phải lên entity — chữa `findAll()` không
+tự chữa `findById()`.
+
+Hai cách khác đã cân nhắc rồi bỏ:
+
+| Cách | Vì sao bỏ |
+|---|---|
+| Đổi sang `EAGER` | Mọi truy vấn đụng `Product` đều gánh thêm danh mục, kể cả chỗ không cần |
+| `@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})` trên `Category` | Chỉ giấu triệu chứng 1, **N+1 vẫn còn**; lại là annotation Jackson 2 trong dự án Jackson 3 (xem `CLAUDE.md`) |
 
 ---
 
@@ -1044,16 +1100,16 @@ Chuyển sai luồng (ví dụ từ `DELIVERED` về `PENDING`) → `409`.
 | Hình dạng response thành công | ✅ Trả DTO trần, không vỏ bọc | — |
 | Hình dạng lỗi | ✅ `ProblemDetail` (RFC 9457), phủ cả lỗi trong filter | — |
 | Đường dẫn | ✅ `/api/*` đã đúng prefix | — |
-| `id` dạng string | ⚠️ `UserResponse` đã đúng | Product/Category/Order làm tương tự |
+| `id` dạng string | ⚠️ `UserResponse`, `CategoryResponse` đã đúng | Product/Order làm tương tự |
 | Response register | ✅ Trả `{accessToken, expires, user}` | — |
-| Validation | ✅ Auth đã có `@Valid` | Áp cho các request record còn lại |
+| Validation | ✅ Auth, User, Category, Product đã có `@Valid` | Bổ sung rule cho các field mới của Product ở bước 5 |
 | CORS | ✅ Đã bật cho `localhost:3000` | — |
 | JWT filter | ✅ `JwtAuthenticationFilter` (`OncePerRequestFilter`) | — |
 | Bảo vệ endpoint | ✅ Phân quyền theo nhóm + `STATELESS` | Thêm rule khi có endpoint mới |
 | JWT secret | ⚠️ Đã ra `application.properties` | Chuyển sang biến môi trường trước khi public repo |
 | Entity Product | ⚠️ Chỉ có `name, price, stock` | Bổ sung ~10 field, đổi `price` sang `Long` |
 | Entity User | ✅ Đủ field + `@CreatedDate`/`@LastModifiedDate` | — |
-| Entity Category | ❌ Chưa có | Tạo mới |
+| Entity Category | ✅ Entity + CRUD đầy đủ, `Product.category` `@ManyToOne` | — |
 | Entity CartItem | ❌ Chưa có | Tạo mới |
 | Entity Order / OrderItem | ❌ Chưa có | Tạo mới |
 | Phân trang / lọc | ❌ Chưa có | `Pageable` + `Specification` |
@@ -1067,7 +1123,7 @@ Chuyển sai luồng (ví dụ từ `DELIVERED` về `PENDING`) → `409`.
 | **1** ✅ | Nền tảng chung: `GlobalExceptionHandler` trả `ProblemDetail`, validation, bật CORS | `@RestControllerAdvice`, `ProblemDetail`, CORS |
 | **2** ✅ | JWT filter + phân quyền thật sự | `OncePerRequestFilter`, `SecurityContextHolder`, filter chain, `AuthenticationEntryPoint` |
 | **3** ✅ | Hoàn thiện User + `GET/PUT /api/users/me` | `@AuthenticationPrincipal`, DTO mapping, JPA auditing |
-| **4** | Category CRUD | Quan hệ `@ManyToOne` / `@OneToMany` |
+| **4** ✅ | Category CRUD | Quan hệ `@ManyToOne`, `@EntityGraph`, `@EnableMethodSecurity`, constraint tự viết |
 | **5** | Nâng cấp Product: đủ field, phân trang, lọc, sắp xếp, soft delete | `Pageable`, `Specification`, `@SQLRestriction` |
 | **6** | Cart | Ràng buộc `UNIQUE`, logic cộng dồn |
 | **7** | Order: đặt hàng + huỷ đơn | `@Transactional`, snapshot, race condition tồn kho |

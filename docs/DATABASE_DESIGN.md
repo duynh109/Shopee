@@ -133,9 +133,9 @@ hoá đơn, rồi rổ được trả về chỗ cũ. Tờ hoá đơn không có
 ```sql
 CREATE TABLE users (
     id            BIGINT AUTO_INCREMENT PRIMARY KEY,
-    email         VARCHAR(160) NOT NULL UNIQUE,
+    email         VARCHAR(255) NOT NULL UNIQUE,
     password      VARCHAR(100) NOT NULL,
-    name          VARCHAR(160)     NULL,
+    name          VARCHAR(255)     NULL,
     phone         VARCHAR(20)      NULL,
     address       VARCHAR(255)     NULL,
     date_of_birth DATE             NULL,
@@ -148,26 +148,41 @@ CREATE TABLE users (
 
 | Cột | Ghi chú |
 |---|---|
-| `email` | `UNIQUE` ở tầng DB, **không chỉ** kiểm tra ở tầng code. Hai request đăng ký cùng lúc cùng email có thể cùng vượt qua bước `findByEmail()` — chỉ ràng buộc DB mới chặn được triệt để |
-| `password` | Lưu **hash BCrypt**, luôn dài đúng 60 ký tự. Để `VARCHAR(100)` cho dư |
+| `email` | `UNIQUE` ở tầng DB, **không chỉ** kiểm tra ở tầng code. Hai request đăng ký cùng lúc cùng email có thể cùng vượt qua bước `findByEmail()` — chỉ ràng buộc DB mới chặn được triệt để. Độ dài `255` vì RFC 5321 cho phép địa chỉ tới 254 kí tự — cắt ngắn hơn là từ chối email hợp lệ |
+| `password` | Lưu **hash BCrypt**, luôn dài đúng 60 ký tự. `VARCHAR(100)` cho dư. Cột này không bao giờ chứa dữ liệu người dùng nhập nên không áp mặc định 255 |
 | `role` | v1 dùng 1 role/user. Khi cần nhiều role → tách bảng `roles` + `user_roles` (n-n) |
 | `address` | Địa chỉ mặc định, dạng chuỗi đơn giản. Sổ địa chỉ nhiều mục là v2 |
 | `name`, `phone`... | Cho `NULL` vì lúc đăng ký chỉ có email + password |
+
+**Quy ước độ dài cột:** không ghi `length` trong entity khi giá trị bằng mặc định của JPA (255) —
+ghi lại chỉ thêm một con số phải giữ đồng bộ với `@Size` ở DTO. Cột nào có con số riêng
+(`password VARCHAR(100)`, `phone VARCHAR(20)`, `role VARCHAR(20)`) thì ghi tường minh.
+
+> `length` **không phải là validate**: nó chỉ sinh ra `VARCHAR(n)`. Vượt quá thì MySQL ném
+> `ERROR 1406 Data too long`, qua Spring thành `DataIntegrityViolationException` → `500` chứ không
+> phải `422`. Ràng buộc DB là *lớp chặn cuối*, không thay được `@Size` ở tầng DTO.
+
+**Giới hạn 72 byte của BCrypt — không liên quan tới độ dài cột.** `BCryptPasswordEncoder` ném
+`IllegalArgumentException: password cannot be more than 72 bytes`, tức `500` nếu không chặn từ
+tầng validate (đo được: 72 kí tự ASCII → `201`, 73 kí tự → lỗi). Vì thế luật độ dài mật khẩu phải
+tính theo **byte**: `@Size` đếm kí tự nên một mật khẩu 25 kí tự tiếng Việt có dấu (3 byte/kí tự =
+75 byte) vẫn lọt qua `@Size(max = 72)`. Dùng annotation riêng `@MaxBytes(72)` ở
+`BE/.../validation/` cho đúng đơn vị.
 
 ### 3.2. `categories`
 
 ```sql
 CREATE TABLE categories (
     id         BIGINT AUTO_INCREMENT PRIMARY KEY,
-    name       VARCHAR(160) NOT NULL UNIQUE,
+    name       VARCHAR(255) NOT NULL UNIQUE,
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL
 );
 ```
 
-`name` để `UNIQUE` (chốt 2026-09-19): hai danh mục cùng tên "Áo thun" là lỗi dữ liệu, và thanh lọc
-ở FE sẽ hiện hai dòng giống hệt nhau. Tầng service vẫn kiểm tra trước để trả lỗi thân thiện, nhưng
-ràng buộc DB mới chặn được hai request tạo cùng lúc — đúng nguyên tắc mục 4.6.
+`name` để `UNIQUE`: hai danh mục trùng tên là lỗi dữ liệu — không có cách nào phân biệt chúng khi
+hiển thị hay khi lọc. Tầng service vẫn kiểm tra trước để trả lỗi thân thiện, nhưng ràng buộc DB mới
+chặn được hai request tạo cùng lúc — đúng nguyên tắc mục 4.6.
 
 Danh mục một cấp. Muốn nhiều cấp (Thời trang nam → Áo → Áo thun) thì thêm
 `parent_id BIGINT NULL REFERENCES categories(id)` — bảng tự tham chiếu chính nó.
@@ -561,9 +576,9 @@ product_variants: id, product_id, sku, name ("Đỏ / Size M"), price, quantity,
 Khi thêm bảng này, `quantity` và `price` **chuyển từ `products` xuống `product_variants`**, và
 `cart_items` / `order_items` phải trỏ tới `variant_id` thay vì `product_id`.
 
-> **Quyết định cho dự án này (chốt 2026-09-16): v1 KHÔNG làm variant.** Lý do:
+> **Quyết định cho dự án này: v1 KHÔNG làm variant.** Lý do:
 >
-> 1. **Không có gì tiêu thụ nó** — FE không có giao diện chọn phân loại.
+> 1. **Không có gì tiêu thụ nó** — chưa có giao diện chọn phân loại ở client nào.
 > 2. **Độ khó nhảy vọt** — variant tử tế (màu × size) cần tới 4 bảng lồng nhau, quá nặng khi mới học JPA.
 > 3. **Việc migration sau này tự nó là bài học giá trị** — di chuyển cột giữa các bảng trên hệ thống đã có
 >    dữ liệu, giữ API không gãy: đó chính là công việc hằng ngày khi đi làm.
@@ -573,7 +588,7 @@ Khi thêm bảng này, `quantity` và `price` **chuyển từ `products` xuống
 > - Dồn toàn bộ logic trừ/cộng kho vào **đúng một method** (`ProductService.decreaseStock()`). Khi cột
 >   `quantity` chuyển xuống bảng variant, chỉ một chỗ phải sửa.
 > - **Không trả entity thẳng ra API, luôn qua DTO.** DTO là lớp đệm: sau này `price` lấy từ đâu thì chỉ
->   sửa chỗ map, FE không cần biết.
+>   sửa chỗ map, client không cần biết.
 > - **Chuyển sang Flyway khi schema v1 ổn định**, rồi lấy chính việc thêm variant làm migration đầu tiên —
 >   bài tập Flyway hoàn hảo vì có đủ: thêm bảng, di chuyển cột, chuyển dữ liệu cũ.
 >

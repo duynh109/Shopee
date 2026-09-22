@@ -1,5 +1,7 @@
 package com.duynh.shopee.product;
 
+import com.duynh.shopee.category.Category;
+import com.duynh.shopee.category.CategoryService;
 import com.duynh.shopee.exception.NotFoundException;
 import org.springframework.stereotype.Service;
 
@@ -9,9 +11,11 @@ import java.util.List;
 public class ProductService {
 
     private final ProductRepository productRepository;
+    private final CategoryService categoryService;
 
-    public ProductService(ProductRepository productRepository) {
+    public ProductService(ProductRepository productRepository, CategoryService categoryService) {
         this.productRepository = productRepository;
+        this.categoryService = categoryService;
     }
 
     public List<Product> getAllProducts() {
@@ -23,16 +27,19 @@ public class ProductService {
                 .orElseThrow(() -> new NotFoundException("Không tìm thấy sản phẩm id: " + id));
     }
 
-    public Product createProduct(String name, double price, int stock) {
-        Product product = new Product(name, price, stock);
+    public Product createProduct(CreateProductRequest request) {
+        Category category = categoryService.getEntityById(request.categoryId());
+        Product product = new Product(request.name(), request.price(), request.stock(), category);
         return productRepository.save(product);
     }
 
-    public Product updateProduct(Long id, String name, double price, int stock) {
+    public Product updateProduct(Long id, CreateProductRequest request) {
         Product product = getProductById(id);
-        product.setName(name);
-        product.setPrice(price);
-        product.setStock(stock);
+        Category category = categoryService.getEntityById(request.categoryId());
+        product.setName(request.name());
+        product.setPrice(request.price());
+        product.setStock(request.stock());
+        product.setCategory(category);
         return productRepository.save(product);
     }
 
