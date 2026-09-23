@@ -58,7 +58,7 @@ public class CategoryService {
     @Transactional
     public void delete(Long id) {
         Category category = getEntityById(id);
-        if (productRepository.existsByCategoryId(id)) {
+        if (productRepository.countByCategoryIdIncludingDeleted(id) > 0) {
             throw new ConflictException("Danh mục vẫn còn sản phẩm, không xoá được");
         }
         categoryRepository.delete(category);

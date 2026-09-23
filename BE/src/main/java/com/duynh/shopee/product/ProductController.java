@@ -1,11 +1,12 @@
 package com.duynh.shopee.product;
 
-import org.springframework.http.HttpStatus;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
-import jakarta.validation.Valid;
-
-import java.util.List;
+import com.duynh.shopee.common.PagedResponse;
 
 @RestController
 @RequestMapping("/api/products")
@@ -17,29 +18,12 @@ public class ProductController {
     }
 
     @GetMapping
-    public List<Product> getAllProducts() {
-        return productService.getAllProducts();
+    public PagedResponse<ProductSummaryResponse> getAllProducts(@ModelAttribute ProductQuery q) {
+        return productService.getProducts(q);
     }
 
     @GetMapping("/{id}")
-    public Product getProduct(@PathVariable Long id) {
+    public ProductResponse getProduct(@PathVariable Long id) {
         return productService.getProductById(id);
-    }
-
-    @PostMapping
-    @ResponseStatus(HttpStatus.CREATED)
-    public Product createProduct(@Valid @RequestBody CreateProductRequest request) {
-        return productService.createProduct(request);
-    }
-
-    @PutMapping("/{id}")
-    public Product updateProduct(@PathVariable Long id, @Valid @RequestBody CreateProductRequest request) {
-        return productService.updateProduct(id, request);
-    }
-
-    @DeleteMapping("/{id}")
-    @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void deleteProduct(@PathVariable Long id) {
-        productService.deleteProduct(id);
     }
 }

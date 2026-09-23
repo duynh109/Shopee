@@ -220,12 +220,18 @@ CREATE TABLE products (
 | `quantity` | Tồn kho. Trừ tại thời điểm **đặt hàng**, không phải lúc thêm vào giỏ. Xem mục 5 |
 | `sold`, `view`, `rating` | **Cố tình phi chuẩn hoá** — xem mục 4.2 |
 | `deleted_at` | **Soft delete** — xem mục 4.3 |
-| `image` | Ảnh đại diện, lặp lại một URL trong `product_images`. Chấp nhận trùng để khỏi join khi render danh sách |
+| `image` | Ảnh bìa, lặp lại một URL trong `product_images`. Chấp nhận trùng để danh sách sản phẩm khỏi phải nạp bảng ảnh — danh sách chỉ trả `image`, album chỉ có ở trang chi tiết (`API_SPEC.md` §2.3). Đồng thời tách "ảnh bìa" khỏi thứ tự album: đổi `sort_order` không làm đổi bìa |
 
 **Về các index:** mỗi index giúp đọc nhanh nhưng làm ghi chậm hơn (mỗi lần INSERT/UPDATE phải cập nhật
 thêm index) và tốn dung lượng. Chỉ đánh index cho cột thực sự hay xuất hiện trong `WHERE` / `ORDER BY`.
 Ở đây: `category_id` (lọc theo danh mục), `price` (lọc khoảng giá + sắp xếp theo giá),
 `created_at` (sắp xếp mới nhất), và full-text cho ô tìm kiếm.
+
+**Trạng thái thực tế:** mới có index trên `category_id` — do MySQL tự tạo kèm khoá ngoại. Hai index
+`price` và `created_at` chưa tạo; khai bằng `@Table(indexes = {...})` trong entity là đủ, chưa làm vì
+dữ liệu còn nhỏ nên chưa đo được khác biệt. `FULLTEXT` thì JPA không khai được (phải chạy SQL tay) và
+hiện cũng **chưa có câu nào dùng tới**: ô tìm kiếm ở `API_SPEC.md` §5.1 làm bằng
+`LIKE '%từ khoá%'`, mà câu đó không tận dụng được full-text. Chỉ tạo khi đổi sang `MATCH ... AGAINST`.
 
 > **Vì sao cần FULLTEXT cho tìm kiếm:** câu `WHERE name LIKE '%áo thun%'` **không dùng được index**
 > vì có dấu `%` ở đầu — MySQL buộc phải quét toàn bộ bảng. Vài nghìn dòng thì không sao, vài trăm nghìn
@@ -430,6 +436,13 @@ Nhờ có snapshot ở `order_items`, đơn hàng cũ vẫn hiển thị đầy 
 
 > Trong JPA có thể dùng `@SQLRestriction("deleted_at IS NULL")` trên entity để Hibernate tự thêm điều kiện,
 > khỏi phải nhớ viết tay ở từng câu query.
+
+**Cái bẫy kèm theo:** `@SQLRestriction` áp cho **mọi** câu query của entity, kể cả những câu hỏi
+không nên bị lọc. Ví dụ "danh mục này còn sản phẩm không?" — dùng để chặn xoá danh mục — phải đếm cả
+sản phẩm đã gỡ bán, vì chúng vẫn là dòng thật đang giữ khoá ngoại. Bị lọc mất thì câu trả lời thành
+"rỗng", lệnh `DELETE` chạy, và khoá ngoại ở tầng DB mới chặn lại bằng một lỗi `500` khó hiểu. Lối
+thoát: cho riêng câu đếm ấy chạy **native SQL**, vì `@SQLRestriction` chỉ can thiệp vào JPQL/Criteria.
+Xem `API_SPEC.md` §5.3.
 
 ### 4.4. Tiền luôn là số nguyên
 

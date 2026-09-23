@@ -72,7 +72,7 @@ thể tự suy ra:
 ```json
 GET /api/products?page=1  →  200
 {
-  "items": [ { "...": "object Product" } ],
+  "items": [ { "...": "Product dạng RÚT GỌN — mục 2.3" } ],
   "page": 1,
   "limit": 20,
   "totalItems": 97,
@@ -287,9 +287,6 @@ Ba mức quyền dùng trong toàn bộ tài liệu này:
 | `POST` | `/api/users/me/avatar` | 🔒 Đã đăng nhập ² | ⬜ b8 ⁹ | `Profile` *(stub)* | `/profile` |
 | `GET` | `/api/products` | 🌐 Công khai | ✅ | `ProductList`, `ProductDetail` ⁵ | `/`, `/:nameId` |
 | `GET` | `/api/products/{id}` | 🌐 Công khai | ✅ | `ProductDetail` | `/:nameId` |
-| `POST` | `/api/products` | 👑 ADMIN | ⚠️ §5.3 | chưa có màn admin ⁶ | — |
-| `PUT` | `/api/products/{id}` | 👑 ADMIN | ⚠️ §5.3 | chưa có màn admin ⁶ | — |
-| `DELETE` | `/api/products/{id}` | 👑 ADMIN | ⚠️ §5.3 | chưa có màn admin ⁶ | — |
 | `GET` | `/api/categories` | 🌐 Công khai | ✅ | `ProductList` (thanh lọc) | `/` |
 | `GET` | `/api/cart` | 🔒 Đã đăng nhập ² | ⬜ b6 | `Cart` *(stub)*, `Header` ⁷ | `/cart` + mọi màn |
 | `POST` | `/api/cart/items` | 🔒 Đã đăng nhập ² | ⬜ b6 | `ProductDetail` (Thêm vào giỏ) | `/:nameId` |
@@ -303,9 +300,9 @@ Ba mức quyền dùng trong toàn bộ tài liệu này:
 | `POST` | `/api/admin/categories` | 👑 ADMIN | ✅ | chưa có màn admin ⁶ | — |
 | `PUT` | `/api/admin/categories/{id}` | 👑 ADMIN | ✅ | chưa có màn admin ⁶ | — |
 | `DELETE` | `/api/admin/categories/{id}` | 👑 ADMIN | ✅ | chưa có màn admin ⁶ | — |
-| `POST` | `/api/admin/products` | 👑 ADMIN | ⬜ b5 | chưa có màn admin ⁶ | — |
-| `PUT` | `/api/admin/products/{id}` | 👑 ADMIN | ⬜ b5 | chưa có màn admin ⁶ | — |
-| `DELETE` | `/api/admin/products/{id}` | 👑 ADMIN | ⬜ b5 | chưa có màn admin ⁶ | — |
+| `POST` | `/api/admin/products` | 👑 ADMIN | ✅ | chưa có màn admin ⁶ | — |
+| `PUT` | `/api/admin/products/{id}` | 👑 ADMIN | ✅ | chưa có màn admin ⁶ | — |
+| `DELETE` | `/api/admin/products/{id}` | 👑 ADMIN | ✅ | chưa có màn admin ⁶ | — |
 | `POST` | `/api/admin/upload-image` | 👑 ADMIN | ⬜ b8 | chưa có màn admin ⁶ | — |
 | `GET` | `/api/admin/orders` | 👑 ADMIN | ⬜ b8 | chưa có màn admin ⁶ | — |
 | `PUT` | `/api/admin/orders/{id}/status` | 👑 ADMIN | ⬜ b8 | chưa có màn admin ⁶ | — |
@@ -385,6 +382,8 @@ chưa đăng nhập không dò được API có những đường dẫn nào. C�
 
 ### 2.3. Product
 
+**Dạng đầy đủ** — trả ở `GET /api/products/{id}`:
+
 ```json
 {
   "id": "12",
@@ -409,8 +408,8 @@ chưa đăng nhập không dò được API có những đường dẫn nào. C�
 
 | Field | Ý nghĩa | Ghi chú |
 |---|---|---|
-| `image` | Ảnh đại diện | Dùng ở card sản phẩm |
-| `images[]` | Album ảnh | Slider ở trang chi tiết; nên chứa cả `image` |
+| `image` | Ảnh bìa | Admin **chọn** ảnh nào làm bìa — không phải `images[0]`, để đổi thứ tự album không làm đổi bìa |
+| `images[]` | Album ảnh | Slider ở trang chi tiết; nên chứa cả `image`. **Chỉ có ở dạng đầy đủ** |
 | `price` | Giá bán hiện tại | |
 | `priceBeforeDiscount` | Giá gốc | FE tính % giảm = `(before - price) / before` |
 | `quantity` | Tồn kho | Dùng để chặn không cho mua quá số này |
@@ -418,13 +417,46 @@ chưa đăng nhập không dò được API có những đường dẫn nào. C�
 | `description` | **HTML** | FE sanitize trước khi render |
 | `category` | Object lồng, không phải id | |
 
+**Dạng rút gọn** — trả ở `GET /api/products` (danh sách). Giống dạng đầy đủ nhưng **bỏ hai field
+nặng nhất**: `images[]` và `description`.
+
+```json
+{
+  "id": "12",
+  "name": "Áo thun nam cổ tròn",
+  "image": "http://localhost:8081/images/ao-thun-1.jpg",
+  "price": 79000,
+  "priceBeforeDiscount": 129000,
+  "quantity": 138,
+  "sold": 520,
+  "view": 4141,
+  "rating": 4.5,
+  "category": { "id": "1", "name": "Áo thun" },
+  "createdAt": "2026-09-16T08:30:00.000Z",
+  "updatedAt": "2026-09-16T08:30:00.000Z"
+}
+```
+
+Vì sao tách hai dạng:
+
+- Một trang danh sách 20 thẻ sản phẩm chỉ cần **một** ảnh mỗi thẻ. Trả cả album nghĩa là phải nạp
+  thêm bảng `product_images` cho cả 20 dòng, rồi gửi qua mạng một đống URL không màn nào hiển thị.
+- `description` là HTML mô tả dài, chỉ trang chi tiết mới render.
+- Chính vì danh sách không đụng tới `images[]` mà cột `products.image` mới có lý do tồn tại
+  (`DATABASE_DESIGN.md` §3.3). Nếu danh sách cũng trả album thì cột đó thành dư thừa.
+
+Hai dạng ⇒ hai DTO ở BE: `ProductSummaryResponse` cho danh sách, `ProductResponse` cho chi tiết.
+
+Cả hai dạng đều giữ `createdAt`/`updatedAt`: màn quản trị cần biết sản phẩm tạo và sửa lúc nào, và
+`sortBy=createdAt` (§5.1) sắp xếp theo đúng mốc này nên trả ra để đối chiếu được.
+
 ### 2.4. CartItem — một dòng trong giỏ hàng
 
 ```json
 {
   "id": "3",
   "quantity": 2,
-  "product": { "...": "nguyên object Product ở mục 2.3" },
+  "product": { "...": "Product dạng RÚT GỌN ở mục 2.3" },
   "createdAt": "2026-09-16T08:30:00.000Z",
   "updatedAt": "2026-09-16T08:30:00.000Z"
 }
@@ -704,6 +736,23 @@ Dùng chung cho trang chủ, tìm kiếm, lọc, sắp xếp, phân trang — t�
 | `ratingFilter` | int | — | Lọc sản phẩm có `rating >= giá trị này` (1–5) |
 | `exclude` | string | — | Loại trừ 1 product id (dùng cho mục "sản phẩm tương tự") |
 
+**Tham số sai thì xử lý thế nào** — hai kiểu, cố ý khác nhau:
+
+| Trường hợp | Kết quả |
+|---|---|
+| `sortBy` ngoài 4 giá trị cho phép (kể cả chuỗi rỗng, kể cả sai hoa thường như `Price`) | `422` kèm `errors.sortBy` |
+| `order` khác `asc`/`desc` | **bỏ qua**, dùng `desc` |
+| `page` < 1 hoặc thiếu | dùng `1` |
+| `limit` < 1 hoặc thiếu | dùng `20` |
+| `limit` > 100 | ép về `100` |
+| `category`, `exclude`, `priceMin`, `priceMax`, `ratingFilter` không phải số | `400` (Spring chặn lúc binding) |
+
+Vì sao `sortBy` nghiêm mà `order` thì không: `sortBy` sai thường là **lỗi lập trình ở FE** (gõ nhầm
+tên field), im lặng trả dữ liệu sắp sai thứ tự sẽ khiến FE đi tìm bug ở chỗ khác. Còn `order` chỉ có
+hai giá trị và sai thì ý định vẫn rõ, nên nhận mặc định là đủ.
+
+Trần `limit = 100` để một request không kéo được cả bảng về.
+
 **Response `200`**
 ```json
 {
@@ -728,7 +777,7 @@ Luôn thêm điều kiện `deleted_at IS NULL`.
 
 **Màn FE:** `ProductDetail` — route `/:nameId`
 
-**Response `200`** — object Product ở mục 2.3.
+**Response `200`** — Product **dạng đầy đủ** ở mục 2.3 (có `images[]` và `description`).
 
 **Response `404`**
 ```json
@@ -741,25 +790,64 @@ Luôn thêm điều kiện `deleted_at IS NULL`.
 
 Mỗi lần gọi thành công thì `view += 1`.
 
+Thực hiện bằng một câu `UPDATE products SET view = view + 1 WHERE id = ?` chứ **không** đọc rồi ghi
+lại từ Java — hai người xem cùng lúc mà đọc-rồi-ghi thì mất một lượt đếm, đúng bài race condition ở
+`DATABASE_DESIGN.md` mục 5. Để DB tự cộng thì thao tác là nguyên tử.
 
-### 5.3. Tạm thời: ba endpoint admin đang nằm ở `/api/products`
+> Đây là một `GET` có ghi DB, phá quy ước "GET không có tác dụng phụ". Chấp nhận vì tác dụng phụ chỉ
+> là một bộ đếm. Cái giá: mỗi lượt xem trang chi tiết là một câu `UPDATE`. Quy mô lớn thì đếm ở
+> Redis rồi ghi dồn theo lô — xem `SYSTEM_DESIGN.md`.
 
-**Quyền:** 👑 **Chỉ ADMIN**
 
-**Màn FE:** không có. Chưa có màn admin ở FE.
+### 5.3. Soft delete và hệ quả của nó
 
-Ba endpoint dưới đây **đã chạy được** nhưng đang ở sai đường dẫn so với §9: chúng là thao tác của
-admin nên đúng ra phải nằm dưới `/api/admin/products`. Bước 5 sẽ chuyển. Ghi lại ở đây để spec
-phản ánh đúng code hiện tại, đừng dùng làm đường dẫn chính thức.
+`DELETE /api/admin/products/{id}` **không xoá dòng**, nó ghi `deleted_at = NOW()`
+(`DATABASE_DESIGN.md` mục 4.3). Entity mang `@SQLRestriction("deleted_at IS NULL")`, nên Hibernate tự
+thêm điều kiện đó vào **mọi** câu query sinh cho `Product` — kể cả câu do `Specification` dựng ở
+§5.1. Không phải nhớ viết tay ở từng chỗ.
 
-| Method | Path | Status | Ghi chú |
-|---|---|---|---|
-| `POST` | `/api/products` | `201` | Body `{ name, price, stock }` — **chưa có validation** |
-| `PUT` | `/api/products/{id}` | `200` | Body giống POST |
-| `DELETE` | `/api/products/{id}` | `204` | Xoá cứng; bước 5 đổi sang soft delete |
+Hệ quả nhìn thấy được:
 
-Cả ba trả `ProblemDetail` chuẩn khi lỗi: `401` nếu thiếu token, `403` nếu token là USER,
-`404` nếu `id` không tồn tại.
+| | |
+|---|---|
+| `DELETE /api/admin/products/{id}` | `204`, dòng vẫn còn dưới DB |
+| `GET /api/products/{id}` sau đó | `404` |
+| `PUT /api/admin/products/{id}` sau đó | `404` |
+| `GET /api/products` | sản phẩm biến mất khỏi danh sách và khỏi `totalItems` |
+
+**Một cái bẫy mà `@SQLRestriction` gây ra.** `CategoryService.delete()` hỏi "danh mục này còn sản
+phẩm không?" để chặn xoá. Nếu câu hỏi đó đi qua JPQL, Hibernate chèn `and deleted_at is null`, và
+một danh mục chỉ còn toàn sản phẩm **đã gỡ bán** sẽ bị coi là rỗng → cho xoá → nhưng dưới DB các dòng
+`products` đó vẫn tồn tại và vẫn trỏ khoá ngoại vào danh mục → MySQL từ chối → `500`.
+
+Vì vậy phép đếm ấy cố ý dùng **native SQL** để nằm ngoài tầm với của `@SQLRestriction`:
+
+```java
+@Query(value = "select count(*) from products where category_id = :categoryId", nativeQuery = true)
+long countByCategoryIdIncludingDeleted(@Param("categoryId") Long categoryId);
+```
+
+Nghĩa nghiệp vụ: *"còn sản phẩm là không xoá được danh mục, kể cả sản phẩm đã gỡ bán"* → `409`.
+
+> Hai điều cần nhớ khi viết native query: (1) phải dùng tên **bảng** và tên **cột**, không phải tên
+> entity và field; (2) kiểu trả về của method phải khớp kiểu cột SQL trả ra — MySQL `EXISTS(...)` trả
+> `BIGINT` chứ không phải boolean, khai `boolean` sẽ nhận `ClassCastException`. Cả hai lỗi này chỉ lộ
+> ra **lúc chạy**, vì Hibernate không kiểm tra chuỗi native lúc khởi động như với JPQL.
+
+### 5.4. Album ảnh
+
+`images[]` lưu ở bảng `product_images` (`DATABASE_DESIGN.md` §3.4), nối bằng
+`@OneToMany(mappedBy = "product", cascade = ALL, orphanRemoval = true)` kèm `@OrderBy("sortOrder ASC")`.
+
+- `POST` và `PUT` nhận **mảng URL**; thứ tự trong mảng chính là `sort_order`.
+- `PUT` **thay toàn bộ album**: ảnh cũ không còn trong mảng sẽ bị xoá khỏi DB nhờ `orphanRemoval`.
+- Chỉ `GET /api/products/{id}` trả `images[]`; danh sách không trả (§2.3), nên câu truy vấn danh sách
+  không đụng tới bảng ảnh.
+
+> Quan hệ này là hai chiều (`Product.images` ↔ `ProductImage.product`), khác với `Category` cố ý một
+> chiều ở §6.3. Lý do: ở đây thật sự cần **duyệt** danh sách để dựng `images[]`, còn với `Category`
+> chỉ cần một câu đếm. Cái giá của hai chiều là JSON đệ quy vô tận nếu trả entity ra ngoài — đó là lý
+> do `ProductResponse`/`ProductSummaryResponse` tồn tại.
 
 ---
 
@@ -1100,19 +1188,19 @@ Chuyển sai luồng (ví dụ từ `DELIVERED` về `PENDING`) → `409`.
 | Hình dạng response thành công | ✅ Trả DTO trần, không vỏ bọc | — |
 | Hình dạng lỗi | ✅ `ProblemDetail` (RFC 9457), phủ cả lỗi trong filter | — |
 | Đường dẫn | ✅ `/api/*` đã đúng prefix | — |
-| `id` dạng string | ⚠️ `UserResponse`, `CategoryResponse` đã đúng | Product/Order làm tương tự |
+| `id` dạng string | ⚠️ `UserResponse`, `CategoryResponse`, `ProductResponse` đã đúng | Order làm tương tự |
 | Response register | ✅ Trả `{accessToken, expires, user}` | — |
-| Validation | ✅ Auth, User, Category, Product đã có `@Valid` | Bổ sung rule cho các field mới của Product ở bước 5 |
+| Validation | ✅ Auth, User, Category, Product | Query param của `GET /api/products` validate ở `ProductQuery.validate()`, không qua `@Valid` |
 | CORS | ✅ Đã bật cho `localhost:3000` | — |
 | JWT filter | ✅ `JwtAuthenticationFilter` (`OncePerRequestFilter`) | — |
 | Bảo vệ endpoint | ✅ Phân quyền theo nhóm + `STATELESS` | Thêm rule khi có endpoint mới |
 | JWT secret | ⚠️ Đã ra `application.properties` | Chuyển sang biến môi trường trước khi public repo |
-| Entity Product | ⚠️ Chỉ có `name, price, stock` | Bổ sung ~10 field, đổi `price` sang `Long` |
+| Entity Product | ✅ Đủ field theo `DATABASE_DESIGN` §3.3, `price` là `Long`, soft delete, album ảnh | — |
 | Entity User | ✅ Đủ field + `@CreatedDate`/`@LastModifiedDate` | — |
 | Entity Category | ✅ Entity + CRUD đầy đủ, `Product.category` `@ManyToOne` | — |
 | Entity CartItem | ❌ Chưa có | Tạo mới |
 | Entity Order / OrderItem | ❌ Chưa có | Tạo mới |
-| Phân trang / lọc | ❌ Chưa có | `Pageable` + `Specification` |
+| Phân trang / lọc | ✅ `Pageable` + `Specification` ở `GET /api/products` | Áp cho `GET /api/orders` ở bước 7 |
 
 ---
 
@@ -1124,7 +1212,7 @@ Chuyển sai luồng (ví dụ từ `DELIVERED` về `PENDING`) → `409`.
 | **2** ✅ | JWT filter + phân quyền thật sự | `OncePerRequestFilter`, `SecurityContextHolder`, filter chain, `AuthenticationEntryPoint` |
 | **3** ✅ | Hoàn thiện User + `GET/PUT /api/users/me` | `@AuthenticationPrincipal`, DTO mapping, JPA auditing |
 | **4** ✅ | Category CRUD | Quan hệ `@ManyToOne`, `@EntityGraph`, `@EnableMethodSecurity`, constraint tự viết |
-| **5** | Nâng cấp Product: đủ field, phân trang, lọc, sắp xếp, soft delete | `Pageable`, `Specification`, `@SQLRestriction` |
+| **5** ✅ | Nâng cấp Product: đủ field, phân trang, lọc, sắp xếp, soft delete | `Pageable`, `Specification`, `@SQLRestriction`, `@OneToMany` + `orphanRemoval` |
 | **6** | Cart | Ràng buộc `UNIQUE`, logic cộng dồn |
 | **7** | Order: đặt hàng + huỷ đơn | `@Transactional`, snapshot, race condition tồn kho |
 | **8** | Admin + upload ảnh | `@PreAuthorize`, `MultipartFile`, máy trạng thái |

@@ -54,11 +54,6 @@ public class SecurityConfig {
 
                         // ---- Chỉ ADMIN ----
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
-                        // Ba endpoint dưới đây là thao tác của admin nhưng hiện còn nằm ở
-                        // /api/products; bước 5 sẽ chuyển sang /api/admin/products theo spec §9.
-                        .requestMatchers(HttpMethod.POST, "/api/products").hasRole("ADMIN")
-                        .requestMatchers(HttpMethod.PUT, "/api/products/**").hasRole("ADMIN")
-                        .requestMatchers(HttpMethod.DELETE, "/api/products/**").hasRole("ADMIN")
 
                         // ---- Phải đăng nhập, role nào cũng được ----
                         // Quyền trên từng bản ghi ("profile này có phải của bạn?") không phải
