@@ -272,12 +272,11 @@ CREATE TABLE cart_items (
 
     CONSTRAINT fk_cart_user    FOREIGN KEY (user_id)    REFERENCES users(id) ON DELETE CASCADE,
     CONSTRAINT fk_cart_product FOREIGN KEY (product_id) REFERENCES products(id),
-    CONSTRAINT uq_cart_item UNIQUE (user_id, product_id),
-    INDEX idx_cart_user (user_id)
+    CONSTRAINT uq_cart_item UNIQUE (user_id, product_id)
 );
 ```
 
-Bảng đơn giản nhất hệ thống, nhưng có bốn điểm đáng chú ý:
+Bảng đơn giản nhất hệ thống, nhưng có sáu điểm đáng chú ý:
 
 **`UNIQUE(user_id, product_id)`** — mỗi user chỉ có tối đa một dòng cho mỗi sản phẩm. Thêm sản phẩm đã
 có trong giỏ thì **cộng dồn** `quantity` vào dòng cũ chứ không tạo dòng mới. Ràng buộc đặt ở tầng DB nên
@@ -294,6 +293,30 @@ sớm cho người dùng, nhưng tồn kho chỉ thực sự bị trừ khi đ�
 **`ON DELETE CASCADE` trên `user_id`** — xoá user thì giỏ hàng biến mất theo, hợp lý vì giỏ hàng là dữ
 liệu tạm. Ngược lại, khoá ngoại từ `orders` tới `users` **không** cascade: đơn hàng là dữ liệu giao dịch,
 phải giữ lại.
+
+JPA thuần **không** sinh được mệnh đề này — `@JoinColumn` chỉ tạo một `FOREIGN KEY` trơn, và xoá user sẽ
+bị MySQL chặn vì còn dòng giỏ hàng tham chiếu. Phải dùng annotation riêng của Hibernate:
+
+```java
+@ManyToOne(fetch = FetchType.LAZY, optional = false)
+@JoinColumn(name = "user_id", nullable = false)
+@OnDelete(action = OnDeleteAction.CASCADE)     // org.hibernate.annotations
+private User user;
+```
+
+Nó chỉ có tác dụng lúc bảng được **tạo mới**. `ddl-auto=update` không sửa khoá ngoại đã tồn tại, nên bỏ
+sót lúc đầu thì sau phải `ALTER TABLE` bằng tay.
+
+**Không cần index riêng cho `user_id`.** Truy vấn hay chạy nhất là `WHERE user_id = ?` (lấy cả giỏ), và
+nó đã được `uq_cart_item (user_id, product_id)` phục vụ: index tổng hợp dùng được cho mọi truy vấn lọc
+theo **tiền tố trái** của nó — `(user_id)` và `(user_id, product_id)`, nhưng không phải `(product_id)`
+một mình. Thêm `INDEX idx_cart_user (user_id)` nữa chỉ tốn chỗ và làm chậm mọi lệnh ghi.
+
+**Khoá ngoại `product_id` không cascade, và đó là một cái bẫy.** `products` dùng xoá mềm, nên dòng sản
+phẩm không bao giờ bị `DELETE` thật — `ON DELETE CASCADE` ở đây sẽ không bao giờ kích hoạt. Nhưng
+`@SQLRestriction("deleted_at IS NULL")` khiến Hibernate coi sản phẩm đó như không tồn tại, trong khi
+`cart_items.product_id` vẫn trỏ tới nó. Nạp dòng giỏ hàng ấy qua `@ManyToOne(optional = false)` sẽ ném
+`EntityNotFoundException`. Cách xử lý và lý do chọn nó nằm ở [`API_SPEC.md` §7.6](API_SPEC.md).
 
 ### 3.6. `orders` — đơn hàng
 

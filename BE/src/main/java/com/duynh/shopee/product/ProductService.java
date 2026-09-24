@@ -39,7 +39,7 @@ public class ProductService {
     @Transactional
     public ProductResponse getProductById(Long id) {
         productRepository.increaseView(id);
-        return ProductResponse.from(findEntityOrThrow(id));
+        return ProductResponse.from(getEntityById(id));
     }
 
     @Transactional
@@ -56,7 +56,7 @@ public class ProductService {
 
     @Transactional
     public ProductResponse updateProduct(Long id, ProductRequest request) {
-        Product product = findEntityOrThrow(id);
+        Product product = getEntityById(id);
         Category category = categoryService.getEntityById(request.categoryId());
 
         product.setName(request.name());
@@ -73,11 +73,11 @@ public class ProductService {
 
     @Transactional
     public void deleteProduct(Long id) {
-        Product product = findEntityOrThrow(id);
+        Product product = getEntityById(id);
         product.setDeletedAt(Instant.now());
     }
 
-    private Product findEntityOrThrow(Long id) {
+    public Product getEntityById(Long id) {
         return productRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Không tìm thấy sản phẩm id: " + id));
     }

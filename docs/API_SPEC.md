@@ -288,11 +288,11 @@ Ba mức quyền dùng trong toàn bộ tài liệu này:
 | `GET` | `/api/products` | 🌐 Công khai | ✅ | `ProductList`, `ProductDetail` ⁵ | `/`, `/:nameId` |
 | `GET` | `/api/products/{id}` | 🌐 Công khai | ✅ | `ProductDetail` | `/:nameId` |
 | `GET` | `/api/categories` | 🌐 Công khai | ✅ | `ProductList` (thanh lọc) | `/` |
-| `GET` | `/api/cart` | 🔒 Đã đăng nhập ² | ⬜ b6 | `Cart` *(stub)*, `Header` ⁷ | `/cart` + mọi màn |
-| `POST` | `/api/cart/items` | 🔒 Đã đăng nhập ² | ⬜ b6 | `ProductDetail` (Thêm vào giỏ) | `/:nameId` |
-| `PUT` | `/api/cart/items/{id}` | 🔒 Đã đăng nhập ² | ⬜ b6 | `Cart` (ô số lượng) | `/cart` |
-| `DELETE` | `/api/cart/items/{id}` | 🔒 Đã đăng nhập ² | ⬜ b6 | `Cart` (xoá 1 dòng) | `/cart` |
-| `DELETE` | `/api/cart/items?ids=1,2,3` | 🔒 Đã đăng nhập ² | ⬜ b6 | `Cart` (xoá nhiều) | `/cart` |
+| `GET` | `/api/cart` | 🔒 Đã đăng nhập ² | ✅ | `Cart` *(stub)*, `Header` ⁷ | `/cart` + mọi màn |
+| `POST` | `/api/cart/items` | 🔒 Đã đăng nhập ² | ✅ | `ProductDetail` (Thêm vào giỏ) | `/:nameId` |
+| `PUT` | `/api/cart/items/{id}` | 🔒 Đã đăng nhập ² | ✅ | `Cart` (ô số lượng) | `/cart` |
+| `DELETE` | `/api/cart/items/{id}` | 🔒 Đã đăng nhập ² | ✅ | `Cart` (xoá 1 dòng) | `/cart` |
+| `DELETE` | `/api/cart/items?ids=1,2,3` | 🔒 Đã đăng nhập ² | ✅ | `Cart` (xoá nhiều) | `/cart` |
 | `POST` | `/api/orders` | 🔒 Đã đăng nhập ² | ⬜ b7 | **chưa có màn** — trang đặt hàng | `/checkout` ⁸ |
 | `GET` | `/api/orders` | 🔒 Đã đăng nhập ² | ⬜ b7 | **chưa có màn** — Đơn mua | `/user/purchase` ⁸ |
 | `GET` | `/api/orders/{id}` | 🔒 Đã đăng nhập ² | ⬜ b7 | **chưa có màn** — chi tiết đơn | `/user/purchase/:id` ⁸ |
@@ -343,6 +343,12 @@ dùng đúng đường dẫn đã thống nhất, khỏi phải sửa link sau.
 về user đang đăng nhập. Quên tầng 2 là mọi user đọc được đơn hàng của nhau — dù tầng 1 vẫn "đúng".
 
 Lưu ý tầng 2 trả **`404` chứ không phải `403`**: trả `403` là đã tiết lộ rằng bản ghi đó tồn tại.
+
+**Cài đặt tầng 2 bằng điều kiện query, không bằng câu `if`.** Nhóm Cart (§7.6) làm mẫu: điều kiện sở
+hữu nằm ngay trong câu truy vấn (`findByIdAndUserId`) chứ không phải kiểm tra sau khi đã lấy dữ liệu
+ra. Nhờ vậy "không tồn tại" và "không phải của bạn" hội tụ về cùng một `Optional.empty()`, nên chỉ có
+một nhánh lỗi để viết và không có chỗ nào để lỡ tay trả `403`. Kiểm bằng `if` thì quên một lần là thủng
+một chỗ, mà triệu chứng là `200` — không có gì để nhận ra.
 
 **Một điều cần biết về thứ tự:** phân quyền chạy **trước** khi Spring tìm controller. Nên URL không
 tồn tại hoặc sai HTTP method mà **không có token** sẽ nhận `401`, không phải `404`/`405` — người
@@ -464,6 +470,9 @@ Cả hai dạng đều giữ `createdAt`/`updatedAt`: màn quản trị cần bi
 
 **Không có field giá.** Giá luôn đọc từ `product.price` — giỏ hàng phản ánh giá hiện tại, sản phẩm giảm
 giá trong lúc còn trong giỏ thì khách được hưởng giá mới. Tổng tiền do FE tự tính từ `product.price × quantity`.
+
+**`product` luôn có mặt, không bao giờ `null`.** Dòng giỏ hàng trỏ tới sản phẩm đã bị xoá mềm sẽ không
+xuất hiện trong response — xem §7.6. FE không cần xử lý trường hợp product rỗng.
 
 ### 2.5. Order — đơn hàng
 
@@ -960,6 +969,9 @@ Hai cách khác đã cân nhắc rồi bỏ:
 Tất cả endpoint nhóm này **bắt buộc** có header `Authorization`, và chỉ thao tác trên giỏ hàng của chính
 user đang đăng nhập (lấy user từ token, **không** tin `userId` do FE gửi).
 
+Ràng buộc `UNIQUE(user_id, product_id)` dưới DB đảm bảo mỗi user chỉ có tối đa một dòng cho mỗi sản
+phẩm — xem [`DATABASE_DESIGN.md` §3.5](DATABASE_DESIGN.md).
+
 ### 7.1. `GET /api/cart`
 
 **Quyền:** 🔒 **Đã đăng nhập**, và chỉ thao tác được trên dữ liệu của **chính mình**
@@ -971,6 +983,16 @@ user đang đăng nhập (lấy user từ token, **không** tin `userId` do FE g
 [ { "...": "object CartItem ở mục 2.4" } ]
 ```
 Mỗi phần tử nhúng nguyên object product nên FE render được toàn bộ một dòng mà không cần gọi thêm API.
+
+**Thứ tự:** dòng thêm sau nằm trước (`createdAt DESC`). Sắp theo `createdAt` chứ không phải `updatedAt`
+— nếu theo `updatedAt` thì mỗi lần người dùng bấm tăng số lượng, dòng đó lại nhảy lên đầu danh sách
+ngay dưới con trỏ chuột của họ.
+
+**Chỉ một câu SQL.** Truy vấn dùng `JOIN FETCH ci.product` + `JOIN FETCH p.category`, nên giỏ bao
+nhiêu món cũng chỉ một lần xuống DB. Để lazy loading tự xoay thì mỗi dòng giỏ hàng sinh thêm một câu
+cho product và một câu cho category — giỏ 30 món thành hơn 60 câu.
+
+**Dòng trỏ tới sản phẩm đã xoá mềm sẽ không xuất hiện.** Xem §7.6.
 
 ### 7.2. `POST /api/cart/items` — thêm vào giỏ
 
@@ -994,8 +1016,22 @@ Mỗi phần tử nhúng nguyên object product nên FE render được toàn b�
    `UNIQUE(user_id, product_id)` đảm bảo không bao giờ có 2 dòng trùng).
 3. Nếu chưa có → tạo dòng mới.
 4. Kiểm tra tổng `quantity` không vượt `product.quantity` → vượt thì `422` với
-   `errors: { "quantity": "Số lượng vượt quá số lượng sản phẩm" }`.
+   `errors: { "quantity": "Số lượng vượt quá số lượng sản phẩm trong kho" }`.
 5. **Không** trừ tồn kho ở bước này — chỉ trừ khi đặt hàng.
+
+Phép cộng ở bước 2 được thực hiện ở kiểu `long` rồi mới so với tồn kho. Cộng bằng `int` thì hai số
+gần 2,1 tỷ cộng lại cho ra **số âm** — và số âm thì lọt qua mọi phép kiểm tra `<= tồn kho`.
+
+**Validation body**
+
+| Trường | Luật | Vi phạm |
+|---|---|---|
+| `productId` | bắt buộc | `422` |
+| `quantity` | bắt buộc, `> 0` | `422` |
+
+Hai trường đều khai kiểu bọc (`Long`, `Integer`) chứ không phải `long`/`int`. Kiểu nguyên thuỷ nhận
+giá trị mặc định `0` khi client không gửi field, nên `@NotNull` sẽ **không** bắt được request thiếu
+`quantity` — nó lọt vào service như một lệnh "thêm 0 sản phẩm".
 
 ### 7.3. `PUT /api/cart/items/{id}` — sửa số lượng
 
@@ -1011,7 +1047,11 @@ Mỗi phần tử nhúng nguyên object product nên FE render được toàn b�
 
 **Response `200`** — dòng giỏ hàng sau khi cập nhật.
 
-Nếu `id` không thuộc về user đang đăng nhập → `404` (không phải `403`, để không tiết lộ rằng dòng đó tồn tại).
+Vẫn kiểm tồn kho như §7.2 bước 4. `quantity = 0` → `422`, **không** hiểu là "xoá dòng này": FE đã có
+nút xoá riêng ở §7.4, và một `PUT` âm thầm xoá dữ liệu là loại bất ngờ không nên có.
+
+Trả `404` khi: `id` không tồn tại, `id` không thuộc về user đang đăng nhập, hoặc sản phẩm của dòng đó
+đã bị xoá mềm. Cả ba trường hợp trả **cùng một** `ProblemDetail` — xem §7.6.
 
 ### 7.4. `DELETE /api/cart/items/{id}` — xoá 1 sản phẩm
 
@@ -1020,6 +1060,8 @@ Nếu `id` không thuộc về user đang đăng nhập → `404` (không phải
 **Màn FE:** `Cart` (nút xoá một dòng) — route `/cart`
 
 **Response `204`** — body rỗng.
+
+`404` trong đúng các trường hợp như §7.3, kể cả khi gọi lại lần thứ hai trên dòng vừa xoá.
 
 ### 7.5. `DELETE /api/cart/items?ids=1,2,3` — xoá nhiều sản phẩm
 
@@ -1032,6 +1074,57 @@ Dùng cho nút "Xoá" sau khi tick chọn nhiều dòng trong trang giỏ hàng.
 **Response `204`** — body rỗng.
 
 Chỉ xoá những dòng thuộc về user đang đăng nhập; id lạ thì bỏ qua, không báo lỗi.
+
+| Đầu vào | Kết quả |
+|---|---|
+| `?ids=1,2,3` hoặc `?ids=1&ids=2&ids=3` | `204`, xoá những dòng thuộc về mình |
+| Trong danh sách có id lạ hoặc id của người khác | `204`, **bỏ qua im lặng**, vẫn xoá các dòng hợp lệ |
+| Thiếu hẳn `?ids=` | `400` |
+| `?ids=1,abc` | `400` |
+| Danh sách rỗng | `422`, `errors: { "ids": "Danh sách id không được để trống" }` |
+
+**Vì sao xoá-một thì `404` mà xoá-nhiều thì im lặng.** Xoá một là người dùng bấm vào đúng một dòng
+đang nhìn thấy — dòng đó biến mất là chuyện bất thường, đáng báo. Xoá nhiều là tick 5 dòng rồi bấm
+một lần: nếu 1 trong 5 vừa bị xoá ở tab khác mà cả lệnh thất bại thì 4 dòng còn lại vẫn nằm nguyên
+đó, tệ hơn hẳn việc lặng lẽ xoá 4 dòng làm được. **Thao tác đơn thì nghiêm khắc, thao tác hàng loạt
+thì khoan dung.**
+
+Lệnh xoá chạy bằng **một câu `DELETE ... WHERE id IN (...) AND user_id = ?`** duy nhất. Viết theo
+derived query (`deleteAllByIdInAndUserId`) thì Spring Data `SELECT` hết ra rồi gọi `remove()` từng
+dòng — xoá 3 dòng thành 4 câu SQL.
+
+### 7.6. Quyền sở hữu, và chuyện sản phẩm biến mất khỏi giỏ
+
+**Ba tình huống, một câu trả lời.** `PUT`/`DELETE` trên một dòng giỏ hàng trả `404` **giống hệt nhau**
+cho cả ba: id không tồn tại, id của người khác, và sản phẩm của dòng đó đã bị xoá mềm. `ProblemDetail`
+trả về chỉ khác nhau ở trường `instance` (là URL được gọi), còn `type`/`title`/`status` trùng khít.
+
+Đây không phải lười phân loại lỗi. Trả `403` cho trường hợp thứ hai là xác nhận với người hỏi rằng
+dòng đó **có tồn tại** — thử lần lượt id từ 1 tới 1000 là đếm được số dòng giỏ hàng của cả hệ thống.
+
+**Cách cài đặt quyết định việc này có đúng hay không.** Điều kiện sở hữu nằm **trong câu query**
+(`WHERE ci.id = :id AND ci.user.id = :userId`) chứ không phải trong một câu `if` sau khi đã lấy dữ
+liệu ra. Hai lý do:
+
+- "Không tồn tại" và "không phải của bạn" hội tụ thành cùng một `Optional.empty()`, nên chỉ có **một**
+  nhánh lỗi để viết — không có chỗ nào để lỡ tay trả `403`.
+- Quên viết câu `if` thì code vẫn chạy, vẫn trả `200`, và mọi user sửa được giỏ của nhau mà không có
+  triệu chứng gì. Quên một điều kiện trong query thì lỗi lộ ra ngay ở lần thử đầu tiên.
+
+**Sản phẩm bị xoá mềm thì dòng giỏ hàng lặng lẽ biến mất.** `products` dùng xoá mềm
+(`@SQLRestriction("deleted_at IS NULL")`), nhưng `cart_items.product_id` vẫn trỏ tới dòng đó — khoá
+ngoại này **không** cascade. Hệ quả: `@ManyToOne(optional = false)` tạo một proxy, proxy xuống DB tìm
+không thấy, và ném `EntityNotFoundException` → `500` cho **toàn bộ** `GET /api/cart`. Một sản phẩm bị
+gỡ khỏi sàn làm hỏng trang giỏ hàng của mọi khách từng bỏ nó vào giỏ.
+
+Cách chặn: dùng `JOIN FETCH` (là **INNER** JOIN) thay vì `@EntityGraph` (Spring Data sinh **LEFT**
+JOIN và không cho chọn kiểu join). Với INNER JOIN, điều kiện `deleted_at IS NULL` do `@SQLRestriction`
+chèn vào khiến dòng giỏ hàng không khớp được với sản phẩm nào và **rơi khỏi kết quả** — đúng hành vi
+mong muốn, và không còn proxy nào để ném lỗi.
+
+**Rác còn lại:** dòng `cart_items` đó vẫn nằm dưới DB vĩnh viễn, chỉ là không ai nhìn thấy. Vô hại
+nhưng tích tụ. Dọn nó là việc của bước 8 (khi admin xoá sản phẩm thì xoá luôn các dòng giỏ hàng trỏ
+tới nó), không phải của bước 6.
 
 ---
 
@@ -1198,7 +1291,7 @@ Chuyển sai luồng (ví dụ từ `DELIVERED` về `PENDING`) → `409`.
 | Entity Product | ✅ Đủ field theo `DATABASE_DESIGN` §3.3, `price` là `Long`, soft delete, album ảnh | — |
 | Entity User | ✅ Đủ field + `@CreatedDate`/`@LastModifiedDate` | — |
 | Entity Category | ✅ Entity + CRUD đầy đủ, `Product.category` `@ManyToOne` | — |
-| Entity CartItem | ❌ Chưa có | Tạo mới |
+| Entity CartItem | ✅ Entity + 5 endpoint, `UNIQUE(user_id, product_id)`, quyền sở hữu ở tầng service | — |
 | Entity Order / OrderItem | ❌ Chưa có | Tạo mới |
 | Phân trang / lọc | ✅ `Pageable` + `Specification` ở `GET /api/products` | Áp cho `GET /api/orders` ở bước 7 |
 
@@ -1213,7 +1306,7 @@ Chuyển sai luồng (ví dụ từ `DELIVERED` về `PENDING`) → `409`.
 | **3** ✅ | Hoàn thiện User + `GET/PUT /api/users/me` | `@AuthenticationPrincipal`, DTO mapping, JPA auditing |
 | **4** ✅ | Category CRUD | Quan hệ `@ManyToOne`, `@EntityGraph`, `@EnableMethodSecurity`, constraint tự viết |
 | **5** ✅ | Nâng cấp Product: đủ field, phân trang, lọc, sắp xếp, soft delete | `Pageable`, `Specification`, `@SQLRestriction`, `@OneToMany` + `orphanRemoval` |
-| **6** | Cart | Ràng buộc `UNIQUE`, logic cộng dồn |
+| **6** ✅ | Cart | Ràng buộc `UNIQUE`, logic cộng dồn, quyền sở hữu theo bản ghi, `JOIN FETCH` |
 | **7** | Order: đặt hàng + huỷ đơn | `@Transactional`, snapshot, race condition tồn kho |
 | **8** | Admin + upload ảnh | `@PreAuthorize`, `MultipartFile`, máy trạng thái |
 | **9** | *(Tuỳ chọn)* Refresh token + đưa `role` vào payload token, hạ TTL — xem §3.4 | Token lifecycle |

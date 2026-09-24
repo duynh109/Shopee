@@ -59,7 +59,7 @@ public class SecurityConfig {
                         // Quyền trên từng bản ghi ("profile này có phải của bạn?") không phải
                         // việc của SecurityConfig — /me tự giải quyết bằng danh tính trong token.
                         .requestMatchers("/api/users/**").authenticated()
-
+                        .requestMatchers("/api/cart/**").authenticated()
                         // ---- Còn lại: phải đăng nhập ----
                         .anyRequest().authenticated());
         return http.build();

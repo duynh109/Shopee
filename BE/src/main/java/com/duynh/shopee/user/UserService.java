@@ -18,12 +18,12 @@ public class UserService {
 
     @Transactional(readOnly = true)
     public UserResponse getMe(String email) {
-        return UserResponse.from(findByEmailOrThrow(email));
+        return UserResponse.from(getEntityByEmail(email));
     }
 
     @Transactional
     public UserResponse updateMe(String email, UpdateProfileRequest request) {
-        User user = findByEmailOrThrow(email);
+        User user = getEntityByEmail(email);
 
         // Đổi mật khẩu làm trước: nếu mật khẩu hiện tại sai thì ném lỗi ngay,
         // không để rơi vào cảnh profile đã đổi mà mật khẩu thì không.
@@ -48,9 +48,12 @@ public class UserService {
         }
 
         // saveAndFlush chứ không phải save: @LastModifiedDate được điền trong callback
-        // @PreUpdate, mà callback đó chỉ chạy lúc Hibernate flush. save() thuần chỉ đánh dấu
-        // entity là bẩn và hoãn flush tới lúc commit — tức là SAU khi method này return, nên
-        // DTO dựng ra sẽ mang updatedAt cũ dù DB đã ghi đúng. flush() ép ghi ngay để entity
+        // @PreUpdate, mà callback đó chỉ chạy lúc Hibernate flush. save() thuần chỉ
+        // đánh dấu
+        // entity là bẩn và hoãn flush tới lúc commit — tức là SAU khi method này
+        // return, nên
+        // DTO dựng ra sẽ mang updatedAt cũ dù DB đã ghi đúng. flush() ép ghi ngay để
+        // entity
         // trong bộ nhớ và bản ghi dưới DB khớp nhau tại thời điểm dựng response.
         return UserResponse.from(userRepository.saveAndFlush(user));
     }
@@ -66,11 +69,13 @@ public class UserService {
     }
 
     /**
-     * Token đã qua được filter nên email chắc chắn hợp lệ; nhánh này chỉ xảy ra khi tài khoản
-     * bị xoá trong lúc token cũ vẫn còn hạn. Trả 404 chứ không 401: người gọi đã xác thực xong,
+     * Token đã qua được filter nên email chắc chắn hợp lệ; nhánh này chỉ xảy ra khi
+     * tài khoản
+     * bị xoá trong lúc token cũ vẫn còn hạn. Trả 404 chứ không 401: người gọi đã
+     * xác thực xong,
      * thứ không tìm thấy là bản ghi.
      */
-    private User findByEmailOrThrow(String email) {
+    public User getEntityByEmail(String email) {
         return userRepository.findByEmail(email)
                 .orElseThrow(() -> new NotFoundException("Không tìm thấy người dùng"));
     }

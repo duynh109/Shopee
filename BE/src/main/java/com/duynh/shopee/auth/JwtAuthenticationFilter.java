@@ -19,17 +19,20 @@ import jakarta.servlet.http.HttpServletResponse;
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
-    /** Nơi filter ghi lại lý do token bị từ chối, để JwtAuthenticationEntryPoint đọc lại. */
+    /**
+     * Nơi filter ghi lại lý do token bị từ chối, để JwtAuthenticationEntryPoint đọc
+     * lại.
+     */
     public static final String TOKEN_ERROR_ATTRIBUTE = "tokenError";
 
     private static final String BEARER_PREFIX = "Bearer ";
 
     private final JwtService jwtService;
-    private final CustomUserDetailsService userDetailsService;
+    private final CustomUserDetailsService customUserDetailsService;
 
-    public JwtAuthenticationFilter(JwtService jwtService, CustomUserDetailsService userDetailsService) {
+    public JwtAuthenticationFilter(JwtService jwtService, CustomUserDetailsService customUserDetailsService) {
         this.jwtService = jwtService;
-        this.userDetailsService = userDetailsService;
+        this.customUserDetailsService = customUserDetailsService;
     }
 
     @Override
@@ -50,7 +53,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
 
         // Luôn cho request đi tiếp, kể cả khi token sai.
-        // Việc chặn là của SecurityConfig, việc trả lỗi là của JwtAuthenticationEntryPoint.
+        // Việc chặn là của SecurityConfig, việc trả lỗi là của
+        // JwtAuthenticationEntryPoint.
         filterChain.doFilter(request, response);
     }
 
@@ -63,7 +67,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     }
 
     private void authenticate(String email) {
-        UserDetails userDetails = userDetailsService.loadUserByUsername(email);
+        UserDetails userDetails = customUserDetailsService.loadUserByUsername(email);
 
         UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
                 userDetails, null, userDetails.getAuthorities());
