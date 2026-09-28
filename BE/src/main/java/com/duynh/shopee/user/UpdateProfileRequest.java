@@ -3,6 +3,7 @@ package com.duynh.shopee.user;
 import java.time.LocalDate;
 
 import com.duynh.shopee.validation.MaxBytes;
+import com.duynh.shopee.validation.ValidationPatterns;
 
 import jakarta.validation.constraints.Past;
 import jakarta.validation.constraints.Pattern;
@@ -23,7 +24,7 @@ public record UpdateProfileRequest(
         @Size(max = 255, message = "Tên không được quá 255 kí tự")
         String name,
 
-        @Pattern(regexp = "\\d{10,11}", message = "Số điện thoại không hợp lệ")
+        @Pattern(regexp = ValidationPatterns.PHONE, message = "Số điện thoại không hợp lệ")
         String phone,
 
         @Size(max = 255, message = "Địa chỉ không được quá 255 kí tự")

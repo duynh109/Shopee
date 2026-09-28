@@ -3,8 +3,10 @@ package com.duynh.shopee.cart;
 import java.util.List;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.duynh.shopee.exception.ConflictException;
 import com.duynh.shopee.exception.FieldValidationException;
 import com.duynh.shopee.exception.NotFoundException;
 import com.duynh.shopee.product.Product;
@@ -82,6 +84,32 @@ public class CartService {
     private void validateStock(Product product, long wanted) {
         if (wanted > product.getQuantity()) {
             throw new FieldValidationException("quantity", "Số lượng vượt quá số lượng sản phẩm trong kho");
+        }
+    }
+
+    public List<CartItem> getItemsForCheckout(List<Long> ids, Long userId) {
+        List<CartItem> items = cartItemRepository.findAllForCheckout(ids, userId);
+        if (items.size() != ids.size()) {
+            throw new NotFoundException("Một số sản phẩm trong giỏ hàng không tồn tại hoặc đã bị xóa");
+        }
+        return items;
+    }
+
+    /**
+     * Xoá các dòng giỏ vừa được đặt hàng. Chỉ gọi được bên trong transaction đặt hàng (MANDATORY).
+     *
+     * Chặn việc bấm "Đặt hàng" hai lần: hai request cùng đọc thấy giỏ hàng và cùng đi tới đây.
+     * Request xong trước xoá được các dòng. Request tới sau thấy các dòng đã mất, xoá được
+     * ít dòng hơn số id → ném 409 → request sau bị huỷ toàn bộ (kho trả lại, không có đơn thứ hai).
+     *
+     * Sau câu DELETE này Hibernate xoá sạch bộ nhớ đệm (clearAutomatically) — người gọi
+     * không được làm thêm thao tác DB nào sau nó.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void removeCheckedoutItems(List<Long> ids, Long userId) {
+        int deleted = cartItemRepository.deleteByIdInAndUserId(ids, userId);
+        if (deleted != ids.size()) {
+            throw new ConflictException("Giỏ hàng vừa thay đổi vui lòng thử lại");
         }
     }
 }

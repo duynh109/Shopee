@@ -145,7 +145,7 @@ camelCase là mặc định của Jackson và đúng convention Java — không 
 
 | Status | Khi nào dùng |
 |---|---|
-| `400` | Request không đọc được: JSON hỏng, path variable sai kiểu, thiếu query param |
+| `400` | Request không đọc được: JSON hỏng, path variable hoặc query param sai kiểu, thiếu query param bắt buộc |
 | `401` | Chưa đăng nhập, token sai/hết hạn, **hoặc sai email/mật khẩu lúc login** |
 | `403` | Đã đăng nhập nhưng không đủ quyền |
 | `404` | Không tìm thấy tài nguyên |
@@ -160,6 +160,13 @@ camelCase là mặc định của Jackson và đúng convention Java — không 
 - `401` = **danh tính không đúng** (sai mật khẩu, token hỏng). Dữ liệu hợp lệ, chỉ là không đúng người.
 - `409` = dữ liệu hợp lệ, danh tính đúng, nhưng **trạng thái hệ thống không cho phép** (sản phẩm vừa hết
   hàng, đơn đã giao rồi nên không huỷ được).
+
+**`400` hay `422` với query param nhận qua `@ModelAttribute`** (`ProductQuery`, `OrderQuery`): Spring gom
+cả lỗi *đổi kiểu* (`?page=abc`) lẫn lỗi *vi phạm luật* vào cùng một `MethodArgumentNotValidException`.
+`GlobalExceptionHandler` tách chúng bằng `FieldError.isBindingFailure()` — có ít nhất một lỗi đổi kiểu thì
+`400`, còn lại `422`. Trước khi tách, `?page=abc` trả `422` kèm câu `Failed to convert value of type
+'java.lang.String' to required type 'java.lang.Integer'` hiện thẳng lên toast: sai status, và lộ chi tiết
+nội bộ.
 
 #### Hình dạng lỗi: RFC 9457 Problem Details
 
@@ -194,7 +201,7 @@ code không phân biệt được hai ca đó.
 
 | Status | `type` | Khi nào |
 |---|---|---|
-| `400` | `/errors/bad-request` | JSON hỏng, path variable sai kiểu, thiếu query param |
+| `400` | `/errors/bad-request` | JSON hỏng, path variable hoặc query param sai kiểu (`?page=abc`), thiếu query param bắt buộc |
 | `401` | `/errors/invalid-credentials` | Sai email hoặc mật khẩu lúc login |
 | `401` | `/errors/token-invalid` | Token hỏng, sai chữ ký, hoặc thiếu |
 | `401` | `/errors/token-expired` | Token hết hạn — FE dùng để kích hoạt refresh |
@@ -230,7 +237,7 @@ BE **luôn phải validate** dù FE đã validate (không bao giờ tin client):
 | `email` | Bắt buộc, đúng định dạng email, độ dài 5–255 ¹ | `Email không hợp lệ` |
 | `password` | Bắt buộc, tối thiểu 6 kí tự, **tối đa 72 byte** ² | `Mật khẩu tối đa 72 kí tự` |
 | `quantity` | Số nguyên ≥ 1, ≤ tồn kho | `Số lượng vượt quá số lượng sản phẩm` |
-| `recipientPhone` | Bắt buộc khi đặt hàng, 10–11 chữ số | `Số điện thoại không hợp lệ` |
+| `phone`, `recipientPhone` | Số Việt Nam dạng trong nước: `0` + 9–10 chữ số ³. `recipientPhone` bắt buộc khi đặt hàng | `Số điện thoại không hợp lệ` |
 
 ¹ `@Email` của Hibernate Validator còn tự áp giới hạn của RFC: phần trước `@` tối đa 64 kí tự.
 Nên một email 200 kí tự với phần local quá dài bị chặn vì *sai định dạng*, không phải vì *quá dài*.
@@ -250,6 +257,21 @@ theo tình huống:
 |---|---|
 | dài hơn 72 **kí tự** | `Mật khẩu tối đa 72 kí tự` |
 | ngắn hơn 72 kí tự nhưng vượt 72 **byte** | `Mật khẩu quá dài, vui lòng bớt kí tự có dấu hoặc kí tự đặc biệt` |
+
+³ **Một luật cho cả hai field, định nghĩa ở một chỗ:** hằng `ValidationPatterns.PHONE` (`"0\\d{9,10}"`)
+trong `BE/.../validation/`, dùng làm `@Pattern(regexp = ValidationPatterns.PHONE)` ở cả
+`UpdateProfileRequest.phone` lẫn `CreateOrderRequest.recipientPhone`. Hai lý do:
+
+- Trang đặt hàng điền sẵn số từ hồ sơ. Hai luật lệch nhau thì có số hồ sơ đã nhận mà lúc đặt hàng
+  lại `422` — trước khi gộp, `8412345678` qua được hồ sơ nhưng bị chặn ở đặt hàng, `+84912345678`
+  thì ngược lại.
+- Không nhận `+84...`: cùng một số không được có hai cách viết trong `orders`, nếu không thì tìm đơn
+  theo số điện thoại phải xử lý cả hai.
+
+Giá trị trong annotation phải là **hằng số lúc biên dịch** — một `static final String` gán bằng chuỗi
+literal thì dùng được, gọi method thì không. `recipientPhone` ghép `@NotNull` (không phải `@NotBlank`)
+với `@Pattern` để không input nào vi phạm cả hai luật cùng lúc: `null` chỉ trượt `@NotNull`, `""`
+chỉ trượt `@Pattern`.
 
 ### 1.8. Kiểu dữ liệu
 
@@ -293,10 +315,10 @@ Ba mức quyền dùng trong toàn bộ tài liệu này:
 | `PUT` | `/api/cart/items/{id}` | 🔒 Đã đăng nhập ² | ✅ | `Cart` (ô số lượng) | `/cart` |
 | `DELETE` | `/api/cart/items/{id}` | 🔒 Đã đăng nhập ² | ✅ | `Cart` (xoá 1 dòng) | `/cart` |
 | `DELETE` | `/api/cart/items?ids=1,2,3` | 🔒 Đã đăng nhập ² | ✅ | `Cart` (xoá nhiều) | `/cart` |
-| `POST` | `/api/orders` | 🔒 Đã đăng nhập ² | ⬜ b7 | **chưa có màn** — trang đặt hàng | `/checkout` ⁸ |
-| `GET` | `/api/orders` | 🔒 Đã đăng nhập ² | ⬜ b7 | **chưa có màn** — Đơn mua | `/user/purchase` ⁸ |
-| `GET` | `/api/orders/{id}` | 🔒 Đã đăng nhập ² | ⬜ b7 | **chưa có màn** — chi tiết đơn | `/user/purchase/:id` ⁸ |
-| `PUT` | `/api/orders/{id}/cancel` | 🔒 Đã đăng nhập ² | ⬜ b7 | **chưa có màn** — Đơn mua | `/user/purchase` ⁸ |
+| `POST` | `/api/orders` | 🔒 Đã đăng nhập ² | ✅ | **chưa có màn** — trang đặt hàng | `/checkout` ⁸ |
+| `GET` | `/api/orders` | 🔒 Đã đăng nhập ² | ✅ | **chưa có màn** — Đơn mua | `/user/purchase` ⁸ |
+| `GET` | `/api/orders/{id}` | 🔒 Đã đăng nhập ² | ✅ | **chưa có màn** — chi tiết đơn | `/user/purchase/:id` ⁸ |
+| `PUT` | `/api/orders/{id}/cancel` | 🔒 Đã đăng nhập ² | ✅ | **chưa có màn** — Đơn mua | `/user/purchase` ⁸ |
 | `POST` | `/api/admin/categories` | 👑 ADMIN | ✅ | chưa có màn admin ⁶ | — |
 | `PUT` | `/api/admin/categories/{id}` | 👑 ADMIN | ✅ | chưa có màn admin ⁶ | — |
 | `DELETE` | `/api/admin/categories/{id}` | 👑 ADMIN | ✅ | chưa có màn admin ⁶ | — |
@@ -1155,29 +1177,63 @@ Chuyển các dòng được chọn trong giỏ thành một đơn hàng.
 > Client gửi **id của dòng giỏ hàng**, không gửi giá hay số lượng. Server tự đọc số lượng từ giỏ và giá
 > từ bảng products — đây là nguyên tắc bảo mật quan trọng: **không bao giờ để client quyết định giá tiền**.
 
+Record `CreateOrderRequest` không có field nào về tiền, số lượng hay trạng thái. Client gửi kèm
+`totalAmount`, `subtotal`, `shippingFee`, `status` thì Jackson bỏ qua — đã thử gửi
+`"totalAmount": 1, "status": "DELIVERED"`, đơn vẫn ra đúng tổng tiền và `PENDING`.
+
+**Validation body**
+
+| Trường | Luật | Vi phạm |
+|---|---|---|
+| `cartItemIds` | bắt buộc, ít nhất 1 phần tử, không phần tử nào `null` | `422` — phần tử `null` báo ở key `cartItemIds[1]` |
+| `recipientName` | bắt buộc, không toàn dấu cách, tối đa 255 | `422` |
+| `recipientPhone` | bắt buộc, `0` + 9–10 chữ số (§1.7 ³) | `422` |
+| `shippingAddress` | bắt buộc, không toàn dấu cách, tối đa 255 | `422` |
+| `paymentMethod` | bắt buộc, `COD` hoặc `BANK_TRANSFER`; v1 chỉ nhận `COD` | thiếu → `422`; `BANK_TRANSFER` → `422`; giá trị ngoài enum (`"CASH"`, `"cod"`) → `400` |
+| `note` | không bắt buộc, tối đa 500 | `422` |
+
+`cartItemIds` trùng nhau (`["1","1"]`) được bỏ trùng trước khi xử lý, không phải lỗi.
+
 **Response `201`** — object Order ở mục 2.5.
 
-**Response `409`** — một sản phẩm vừa hết hàng
-```json
-{
-  "type": "/errors/conflict",
-  "title": "Sản phẩm \"Áo thun nam cổ tròn\" không đủ số lượng",
-  "status": 409
-}
-```
+**Các lỗi nghiệp vụ**
 
-**Logic nghiệp vụ** — API phức tạp nhất, bắt buộc `@Transactional`. Chi tiết từng bước ghi DB xem
-[`DATABASE_DESIGN.md`](DATABASE_DESIGN.md) mục 6:
+| Tình huống | Status | `title` |
+|---|---|---|
+| Có **dù chỉ một** id không đặt được: không tồn tại, của người khác, hoặc sản phẩm đã ngừng bán | `404` | `Một số sản phẩm trong giỏ hàng không tồn tại hoặc đã bị xóa` |
+| Một món không đủ tồn kho | `409` | `Sản phẩm Áo thun nam cổ tròn không đủ số lượng` |
+| Các dòng giỏ vừa bị một request khác đặt mất (bấm "Đặt hàng" hai lần) | `409` | `Giỏ hàng vừa thay đổi vui lòng thử lại` |
 
-1. Đọc các `cart_items` theo id, kiểm tra thuộc về user đang đăng nhập.
-2. Đọc products tương ứng, kiểm tra chưa bị xoá.
-3. Trừ tồn kho bằng UPDATE có điều kiện (chống race condition), cộng `sold`.
-4. Tính `subtotal`, `shippingFee`, `totalAmount`.
-5. Tạo `orders` với `status = PENDING`, sinh `orderCode`.
-6. Tạo `order_items`, **chép** tên/ảnh/giá từ products.
-7. Xoá các `cart_items` đã đặt — dòng không được chọn vẫn nằm lại trong giỏ.
+Cả ba đều **huỷ toàn bộ đơn**: đã kiểm với đơn 2 món mà món thứ hai hết hàng — câu `UPDATE` trừ kho
+món thứ nhất đã chạy, rồi bị rollback; kho, giỏ và bảng `orders` đều y như trước request.
 
-Lỗi ở bất kỳ bước nào → rollback toàn bộ.
+**Nghiêm khắc, khác với xoá nhiều ở §7.5.** Xoá nhiều dòng giỏ thì bỏ qua id lạ; đặt hàng thì một id lạ
+là từ chối cả đơn. Lặng lẽ bỏ một món khỏi đơn nghĩa là khách trả tiền và nhận hàng khác với thứ họ đã
+chọn — thao tác dính tới tiền thì thiếu một là hỏng cả.
+
+**Logic nghiệp vụ** — một `@Transactional` bao trọn. Chi tiết từng bước ghi DB xem
+[`DATABASE_DESIGN.md`](DATABASE_DESIGN.md) mục 6. Mỗi luật nằm ở module sở hữu dữ liệu của nó
+(`SYSTEM_DESIGN.md` Level 2) — `OrderService` chỉ inject `OrderRepository`, còn lại gọi qua service:
+
+| Bước | Ai làm | Lỗi |
+|---|---|---|
+| 1–2. Đọc các dòng giỏ được chọn: của chính mình, sản phẩm còn bán, nạp kèm product | `CartService.getItemsForCheckout` | `404` |
+| 3. Trừ kho từng món bằng `UPDATE` có điều kiện, cộng `sold` | `ProductService.decreaseStock` | `409` |
+| 4–6. Tạo đơn, sinh `orderCode`, chép tên/ảnh/giá vào `order_items`; tổng tiền do `Order.addItem()` tự cộng | `OrderService` | — |
+| 7. Xoá các dòng đã đặt — dòng không chọn vẫn nằm lại trong giỏ | `CartService.removeCheckedoutItems` | `409` |
+
+Hai method ghi dữ liệu ở bước 3 và 7 khai `Propagation.MANDATORY`: chỉ chạy được bên trong transaction
+của `placeOrder`. Đã kiểm bằng cách gọi lẻ `decreaseStock`: Spring ném
+`IllegalTransactionStateException: No existing transaction found for transaction marked with
+propagation 'mandatory'` và kho không bị đụng tới.
+
+**Đã kiểm khi chạy song song** (`DATABASE_DESIGN.md` §5): 20 người mua cùng lúc 5 món cuối → đúng 5
+đơn; một user gửi cùng lúc 2 request đặt cùng một dòng giỏ → đúng 1 đơn, request kia `409`.
+
+**Số câu SQL** cho một đơn 2 món: **10** — 2 `SELECT users` (một ở filter JWT, một ở service — nợ
+`UserPrincipal`), 1 `SELECT` giỏ kèm product, 2 `UPDATE products`, 1 `SELECT` kiểm mã đơn trùng,
+1 `INSERT orders`, 2 `INSERT order_items`, 1 `DELETE cart_items`. Không có câu nào nạp lại product
+khi dựng response.
 
 ### 8.2. `GET /api/orders` — danh sách đơn của tôi
 
@@ -1187,9 +1243,18 @@ Lỗi ở bất kỳ bước nào → rollback toàn bộ.
 
 | Param | Kiểu | Mặc định | Ý nghĩa |
 |---|---|---|---|
-| `status` | enum | — | Lọc theo trạng thái. Bỏ trống = lấy tất cả |
-| `page` | int | `1` | |
-| `limit` | int | `10` | |
+| `status` | enum | — | Lọc theo trạng thái. Bỏ trống = lấy tất cả. Phân biệt hoa thường: `pending` → `400` |
+| `page` | int | `1` | Thiếu hoặc `< 1` → `1`. Quá số trang → `items` rỗng, `totalItems` vẫn đúng |
+| `limit` | int | `10` | Thiếu hoặc `< 1` → `10`; **tối đa `50`**, lớn hơn thì bị chặn về `50` |
+
+Tham số sai kiểu (`?page=abc`, `?status=ABC`) → `400 /errors/bad-request`, xem §1.6. Nhận qua record
+`OrderQuery` + `@ModelAttribute`, cùng kiểu với `ProductQuery`; giá trị thiếu hoặc vô lý được thay bằng
+mặc định ngay trong compact constructor.
+
+**Thứ tự:** mới nhất trước — `ORDER BY created_at DESC, id DESC`. Cột `id` là trọng tài: hai đơn trùng
+`created_at` tới mili-giây thì DB được phép trả chúng theo thứ tự bất kỳ, và mỗi lần query có thể khác
+nhau — trang 1 và trang 2 lệch thứ tự thì một đơn hiện ở cả hai trang còn một đơn biến mất. Thêm một cột
+duy nhất làm tiêu chí phụ thì thứ tự luôn xác định.
 
 **Response `200`**
 ```json
@@ -1204,6 +1269,28 @@ Lỗi ở bất kỳ bước nào → rollback toàn bộ.
 Mỗi đơn kèm sẵn `items` để trang "Đơn mua" render được ngay danh sách sản phẩm trong từng đơn mà không
 phải gọi thêm API cho mỗi đơn.
 
+**Số câu SQL không phụ thuộc số đơn trong trang.** Dòng hàng nạp bằng `@BatchSize(size = 50)` trên
+`Order.orderItems`: lần đầu cần `items` của một đơn, Hibernate nạp luôn `items` của mọi đơn trong trang
+bằng **một** câu `WHERE order_id IN (...)`. Đo được:
+
+| Trang | Câu SQL |
+|---|---|
+| Trang 1, 10 đơn | 5 — 2 `SELECT users` (nợ `UserPrincipal`), 1 `COUNT`, 1 lấy đơn (`LIMIT`), 1 lấy dòng hàng |
+| Trang 2, 2 đơn (trang cuối) | 4 — **không có `COUNT`**: trang trả về ít dòng hơn `limit` nên Spring Data tự suy ra tổng số = `offset + số dòng`, khỏi đếm |
+
+`limit` tối đa 50 cho khớp `@BatchSize(50)`: một trang luôn nằm gọn trong một lần nạp. Câu `IN` luôn có
+đủ 50 dấu `?` kể cả khi trang chỉ có 10 đơn — Hibernate đệm cho đủ để mọi trang dùng chung một câu
+prepared statement.
+
+> **Vì sao không `JOIN FETCH` / `@EntityGraph` trên câu có phân trang.** Nối `orders` với `order_items`
+> thì mỗi đơn thành nhiều dòng, `LIMIT 10` sẽ cắt giữa chừng một đơn. Hibernate 5–6 xử lý bằng cách bỏ
+> `LIMIT`, tải hết rồi cắt trang trong bộ nhớ. **Hibernate 7.4.1 của project thì không** — đo được: nó
+> viết lại thành `select ... from (select ... from orders where user_id=? order by ... limit ?,?) o1_0
+> left join order_items ...`, tức phân trang đơn trong subquery trước rồi mới nối dòng hàng; kết quả đúng
+> và không có cảnh báo. Vẫn giữ `@BatchSize` vì một annotation trên collection phủ **mọi** câu nạp đơn
+> (có lọc `status`, không lọc, danh sách admin ở bước 8), còn `@EntityGraph` phải gắn lại trên từng
+> method — quên một method là N+1 quay về mà không có triệu chứng gì.
+
 ### 8.3. `GET /api/orders/{id}` — chi tiết một đơn
 
 **Quyền:** 🔒 **Đã đăng nhập**, và chỉ thao tác được trên dữ liệu của **chính mình**
@@ -1211,7 +1298,15 @@ phải gọi thêm API cho mỗi đơn.
 **Màn FE:** **Chưa có màn** — route đề xuất `/user/purchase/:id`
 
 **Response `200`** — object Order đầy đủ.
-Nếu đơn không thuộc về user đang đăng nhập → `404`.
+
+Đơn không tồn tại và đơn của người khác trả **cùng một** `404` (`Không tìm thấy đơn hàng`) — chỉ khác
+`instance`. Quyền sở hữu nằm trong câu query (`findByIdAndUserId`), cùng mẫu với Cart (§7.6).
+`/api/orders/abc` → `400`.
+
+**Đơn cũ không phụ thuộc vào sản phẩm còn bán hay không.** Đã kiểm: xoá mềm sản phẩm của một đơn rồi
+gọi lại endpoint này → vẫn `200`, tên/giá/`productId` vẫn là bản chụp lúc đặt, và log không có câu SQL
+nào đụng tới bảng `products` (chỉ `users`, `orders`, `order_items`). Đó là nhờ `OrderItemResponse`
+chỉ gọi `getProduct().getId()` — proxy đã biết sẵn id — xem `DATABASE_DESIGN.md` §3.7.
 
 ### 8.4. `PUT /api/orders/{id}/cancel` — huỷ đơn
 
@@ -1224,21 +1319,62 @@ Nếu đơn không thuộc về user đang đăng nhập → `404`.
 { "cancelledReason": "Đặt nhầm sản phẩm" }
 ```
 
-**Response `200`** — đơn sau khi huỷ (`status = CANCELLED`).
+**Validation body**
 
-**Response `409`** — đơn không ở trạng thái cho phép huỷ
-```json
-{
-  "type": "/errors/conflict",
-  "title": "Đơn hàng đang được giao, không thể huỷ",
-  "status": 409
-}
-```
+| Trường | Luật | Vi phạm |
+|---|---|---|
+| `cancelledReason` | bắt buộc, không toàn dấu cách, tối đa 255 (cột `cancelled_reason`) | `422` |
 
-**Logic nghiệp vụ** (cũng cần `@Transactional`):
-1. Kiểm tra đơn đang ở `PENDING` hoặc `CONFIRMED`, không thì `409`.
-2. Đổi `status` sang `CANCELLED`, ghi `cancelledReason`.
-3. **Hoàn lại tồn kho**: cộng trả `quantity` và trừ lại `sold` cho từng sản phẩm.
+Không gửi body → `400`.
+
+**Response `200`** — đơn sau khi huỷ (`status = CANCELLED`, `cancelledReason` đã lưu, `updatedAt` mới).
+
+**Các lỗi**
+
+| Trạng thái hiện tại của đơn | Status | `title` |
+|---|---|---|
+| `PENDING`, `CONFIRMED` | `200` | — huỷ được |
+| `SHIPPING` | `409` | `Đơn hàng đang được giao, không thể hủy` |
+| `DELIVERED` | `409` | `Đơn hàng đã giao, không thể hủy` |
+| `CANCELLED` | `409` | `Đơn hàng đã được hủy trước đó` |
+| *(không tồn tại / của người khác)* | `404` | `Không tìm thấy đơn hàng` |
+
+`409` không đụng tới kho: trạng thái được kiểm **trước** khi hoàn kho.
+
+**Logic nghiệp vụ** — một `@Transactional`:
+
+1. Đọc đơn của chính mình **và khoá dòng đó** tới hết transaction:
+   `@Lock(LockModeType.PESSIMISTIC_WRITE)` → Hibernate sinh `... for update of o1_0`.
+2. `order.cancel(reason)` — cửa **duy nhất** để đơn thành `CANCELLED` (`Order` không có setter). Sai trạng
+   thái → `409`.
+3. Hoàn kho từng dòng qua `ProductService.increaseStock(productId, quantity)` (`MANDATORY`): cộng trả
+   `quantity`, trừ lại `sold`.
+4. `saveAndFlush` rồi mới dựng response — `@LastModifiedDate` chỉ được điền lúc flush; `save()` thường
+   trả về `updatedAt` cũ (cùng lỗi đã gặp ở §4.2).
+
+**Vì sao khoá dòng.** Bấm "Huỷ" hai lần (hoặc hai tab): không có khoá thì cả hai request cùng đọc thấy
+`PENDING`, cùng hoàn kho — kho bị cộng gấp đôi. Có khoá thì request sau đứng chờ ngay ở câu `SELECT`, tới
+khi request trước commit mới đọc được trạng thái **mới** là `CANCELLED` → `409`. Ở đây dùng khoá bi quan
+(`DATABASE_DESIGN.md` §5 cách 3) thay vì `UPDATE` có điều kiện như khi trừ kho, vì huỷ đơn có nhiều nhánh
+với câu thông báo riêng rồi còn hoàn kho cho từng dòng — khoá **một dòng** trong một transaction ngắn là
+cách đơn giản nhất để cả chuỗi chạy tuần tự. API đổi trạng thái đơn của admin (bước 8) phải dùng chung
+khoá này, để "khách huỷ" và "admin chuyển sang `SHIPPING`" không chạy chồng lên nhau.
+
+Khoá nằm ở `@Lock`, **không** viết `FOR UPDATE` trong chuỗi `@Query`: JPQL không có mệnh đề đó —
+`BadJpqlGrammarException: ... mismatched input 'FOR'` và app không khởi động. Hibernate tự dịch `@Lock`
+sang cú pháp của từng DB.
+
+Đã kiểm khi chạy song song: 5 request huỷ cùng một đơn → 1 × `200`, 4 × `409`, kho chỉ được cộng lại
+một lần. Bỏ `@Lock` thì cả 5 đều `200` và kho bị cộng gấp năm (`DATABASE_DESIGN.md` §5).
+
+**Đơn có sản phẩm đã bị gỡ vẫn huỷ được.** `@SQLRestriction` cũng áp vào câu `UPDATE` hoàn kho, nên với
+sản phẩm đã xoá mềm câu đó sửa `0` dòng — và **không** được coi là lỗi: hàng đã gỡ thì không ai bán nữa,
+còn ném lỗi thì đơn đó sẽ không bao giờ huỷ được. Đã kiểm với đơn 2 món, 1 món đã gỡ: `200`, món còn bán
+được hoàn kho, món đã gỡ giữ nguyên. `increaseStock` nhận `productId` chứ không nhận `Product`, vì trên
+`OrderItem.getProduct()` chỉ được gọi `getId()`.
+
+**Thanh toán:** v1 chỉ có COD nên đơn huỷ vẫn `paymentStatus = UNPAID`. `REFUNDED` chỉ có nghĩa khi làm
+`BANK_TRANSFER`.
 
 ---
 
@@ -1281,7 +1417,7 @@ Chuyển sai luồng (ví dụ từ `DELIVERED` về `PENDING`) → `409`.
 | Hình dạng response thành công | ✅ Trả DTO trần, không vỏ bọc | — |
 | Hình dạng lỗi | ✅ `ProblemDetail` (RFC 9457), phủ cả lỗi trong filter | — |
 | Đường dẫn | ✅ `/api/*` đã đúng prefix | — |
-| `id` dạng string | ⚠️ `UserResponse`, `CategoryResponse`, `ProductResponse` đã đúng | Order làm tương tự |
+| `id` dạng string | ✅ Mọi DTO response, kể cả `OrderResponse` và `productId` trong `OrderItemResponse` | — |
 | Response register | ✅ Trả `{accessToken, expires, user}` | — |
 | Validation | ✅ Auth, User, Category, Product | Query param của `GET /api/products` validate ở `ProductQuery.validate()`, không qua `@Valid` |
 | CORS | ✅ Đã bật cho `localhost:3000` | — |
@@ -1292,8 +1428,8 @@ Chuyển sai luồng (ví dụ từ `DELIVERED` về `PENDING`) → `409`.
 | Entity User | ✅ Đủ field + `@CreatedDate`/`@LastModifiedDate` | — |
 | Entity Category | ✅ Entity + CRUD đầy đủ, `Product.category` `@ManyToOne` | — |
 | Entity CartItem | ✅ Entity + 5 endpoint, `UNIQUE(user_id, product_id)`, quyền sở hữu ở tầng service | — |
-| Entity Order / OrderItem | ❌ Chưa có | Tạo mới |
-| Phân trang / lọc | ✅ `Pageable` + `Specification` ở `GET /api/products` | Áp cho `GET /api/orders` ở bước 7 |
+| Entity Order / OrderItem | ✅ Entity + 4 endpoint §8, đã kiểm cả chạy song song (`DATABASE_DESIGN.md` §5) | — |
+| Phân trang / lọc | ✅ `GET /api/products` (`Pageable` + `Specification`), `GET /api/orders` (`Pageable` + lọc `status`) | — |
 
 ---
 
@@ -1307,7 +1443,7 @@ Chuyển sai luồng (ví dụ từ `DELIVERED` về `PENDING`) → `409`.
 | **4** ✅ | Category CRUD | Quan hệ `@ManyToOne`, `@EntityGraph`, `@EnableMethodSecurity`, constraint tự viết |
 | **5** ✅ | Nâng cấp Product: đủ field, phân trang, lọc, sắp xếp, soft delete | `Pageable`, `Specification`, `@SQLRestriction`, `@OneToMany` + `orphanRemoval` |
 | **6** ✅ | Cart | Ràng buộc `UNIQUE`, logic cộng dồn, quyền sở hữu theo bản ghi, `JOIN FETCH` |
-| **7** | Order: đặt hàng + huỷ đơn | `@Transactional`, snapshot, race condition tồn kho |
+| **7** ✅ | Order: đặt hàng + huỷ đơn | `@Transactional`, snapshot, race condition tồn kho |
 | **8** | Admin + upload ảnh | `@PreAuthorize`, `MultipartFile`, máy trạng thái |
 | **9** | *(Tuỳ chọn)* Refresh token + đưa `role` vào payload token, hạ TTL — xem §3.4 | Token lifecycle |
 

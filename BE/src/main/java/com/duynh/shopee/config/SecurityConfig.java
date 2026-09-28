@@ -60,6 +60,7 @@ public class SecurityConfig {
                         // việc của SecurityConfig — /me tự giải quyết bằng danh tính trong token.
                         .requestMatchers("/api/users/**").authenticated()
                         .requestMatchers("/api/cart/**").authenticated()
+                        .requestMatchers("/api/orders/**").authenticated()
                         // ---- Còn lại: phải đăng nhập ----
                         .anyRequest().authenticated());
         return http.build();

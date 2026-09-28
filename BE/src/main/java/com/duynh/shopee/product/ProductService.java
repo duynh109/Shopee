@@ -7,11 +7,13 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.duynh.shopee.category.Category;
 import com.duynh.shopee.category.CategoryService;
 import com.duynh.shopee.common.PagedResponse;
+import com.duynh.shopee.exception.ConflictException;
 import com.duynh.shopee.exception.NotFoundException;
 
 @Service
@@ -80,5 +82,18 @@ public class ProductService {
     public Product getEntityById(Long id) {
         return productRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Không tìm thấy sản phẩm id: " + id));
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void decreaseStock(Product product, int quantity) {
+        int updated = productRepository.decreaseStock(product.getId(), quantity);
+        if (updated == 0) {
+            throw new ConflictException("Sản phẩm %s không đủ số lượng".formatted(product.getName()));
+        }
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void increaseStock(Long productId, int quantity) {
+        productRepository.increaseStock(productId, quantity);
     }
 }

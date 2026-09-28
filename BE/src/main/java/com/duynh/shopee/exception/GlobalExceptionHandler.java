@@ -54,6 +54,9 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ProblemDetail handleBeanValidation(MethodArgumentNotValidException ex) {
+        if (ex.getBindingResult().getFieldErrors().stream().anyMatch(FieldError::isBindingFailure)) {
+            return problem(HttpStatus.BAD_REQUEST, "/errors/bad-request", "Request không đọc được");
+        }
         Map<String, String> errors = new HashMap<>();
         for (FieldError fieldError : ex.getBindingResult().getFieldErrors()) {
             errors.putIfAbsent(fieldError.getField(), fieldError.getDefaultMessage());

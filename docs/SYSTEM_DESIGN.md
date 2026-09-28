@@ -162,6 +162,23 @@ Nguyên tắc để ranh giới không bị phá vỡ:
 2. **Mỗi bảng chỉ thuộc về một module.** Không để hai module cùng ghi vào một bảng.
 3. Muốn chặt chẽ hơn thì dùng công cụ như ArchUnit để viết test kiểm tra ranh giới — vi phạm là fail build.
 
+**Trạng thái trong code v1.** `CartService` đi đúng nguyên tắc 1: lấy user qua `UserService`, lấy sản
+phẩm qua `ProductService`. Hai chỗ còn lệch, đều đã biết:
+
+- `CategoryService` inject thẳng `ProductRepository` để đếm sản phẩm trước khi xoá danh mục. Đổi sang gọi
+  `ProductService` thì thành **phụ thuộc vòng tròn** — `ProductService` đã phụ thuộc `CategoryService` —
+  và với constructor injection, Spring không dựng được bean nào trước nên app không khởi động. Muốn gỡ
+  thì phải đổi cấu trúc (ví dụ phát sự kiện "sắp xoá danh mục"), chưa đáng làm ở v1.
+- `AuthService` và `CustomUserDetailsService` (module `auth`) đọc/ghi thẳng bảng `users` qua
+  `UserRepository` — lệch cả nguyên tắc 1 lẫn 2. Để làm cùng lúc với `UserPrincipal`, vì cả hai cùng
+  đụng vào luồng đăng nhập.
+
+Khi một module gọi service của module khác bên trong một `@Transactional`, method được gọi **tham gia
+vào transaction đang chạy** (propagation mặc định `REQUIRED`), nên đi qua service không làm mất tính
+"được ăn cả ngã về không". Method nào chỉ có nghĩa khi nằm trong transaction của người khác (trừ kho khi
+đặt hàng) thì khai `@Transactional(propagation = Propagation.MANDATORY)`: gọi lẻ nó là lỗi lập trình,
+Spring ném `IllegalTransactionStateException` ngay.
+
 Làm tốt Level 2 thì việc lên microservices sau này chỉ còn là chuyện kỹ thuật. Bỏ qua Level 2 mà nhảy
 thẳng lên microservices sẽ ra thứ tệ nhất: **distributed monolith** — các service vẫn dính chặt vào nhau
 nhưng giờ phải gọi nhau qua mạng, tức là gộp đủ nhược điểm của cả hai mô hình.

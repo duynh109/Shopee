@@ -28,4 +28,20 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
     @Modifying(clearAutomatically = true)
     @Query("UPDATE Product p SET p.view = p.view + 1 WHERE p.id = :id")
     void increaseView(@Param("id") Long id);
+
+    @Modifying
+    @Query("""
+            UPDATE Product p
+            SET p.quantity = p.quantity - :qty, p.sold = p.sold + :qty
+            WHERE p.id = :id AND p.quantity >= :qty
+            """)
+    int decreaseStock(@Param("id") Long id, @Param("qty") int qty);
+
+    @Modifying
+    @Query("""
+            UPDATE Product p
+            SET p.quantity = p.quantity + :qty, p.sold = p.sold - :qty
+            WHERE p.id = :id
+            """)
+    int increaseStock(@Param("id") Long id, @Param("qty") int qty);
 }
