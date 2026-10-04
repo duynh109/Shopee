@@ -4,6 +4,7 @@ target/
 !**/src/test/**/target/
 HELP.md
 .mvn/wrapper/maven-wrapper.jar
+BE/uploads/
 
 ### Node (FE) ###
 node_modules/

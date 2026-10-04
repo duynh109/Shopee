@@ -151,6 +151,7 @@ camelCase là mặc định của Jackson và đúng convention Java — không 
 | `404` | Không tìm thấy tài nguyên |
 | `405` | Đường dẫn đúng nhưng sai HTTP method |
 | `409` | Xung đột trạng thái (huỷ đơn đã giao, hết hàng khi đặt) |
+| `413` | File upload vượt dung lượng cho phép (ảnh > 1MB) |
 | `415` | Thiếu hoặc sai `Content-Type` |
 | `422` | **Lỗi validate dữ liệu đầu vào** |
 | `500` | Lỗi server |
@@ -209,7 +210,8 @@ code không phân biệt được hai ca đó.
 | `404` | `/errors/not-found` | Không tìm thấy tài nguyên |
 | `405` | `/errors/method-not-allowed` | Sai HTTP method |
 | `409` | `/errors/conflict` | Xung đột trạng thái |
-| `415` | `/errors/unsupported-media-type` | Thiếu hoặc sai `Content-Type` |
+| `413` | `/errors/content-too-large` | File upload vượt 1MB (§9.4) |
+| `415` | `/errors/unsupported-media-type` | Thiếu hoặc sai `Content-Type`. `title` nhắc đúng loại endpoint cần: `application/json`, hoặc `multipart/form-data` với hai endpoint upload |
 | `422` | `/errors/validation` | Dữ liệu đầu vào không hợp lệ |
 | `500` | `/errors/internal-server-error` | Lỗi không lường trước |
 
@@ -306,7 +308,7 @@ Ba mức quyền dùng trong toàn bộ tài liệu này:
 | `POST` | `/api/auth/refresh-token` | 🌐 Công khai ¹ | ⬜ b9 | interceptor `utils/http.ts` ⁴ | — |
 | `GET` | `/api/users/me` | 🔒 Đã đăng nhập ² | ✅ | `Profile` *(stub)* | `/profile` |
 | `PUT` | `/api/users/me` | 🔒 Đã đăng nhập ² | ✅ | `Profile` *(stub)* | `/profile` |
-| `POST` | `/api/users/me/avatar` | 🔒 Đã đăng nhập ² | ⬜ b8 ⁹ | `Profile` *(stub)* | `/profile` |
+| `POST` | `/api/users/me/avatar` | 🔒 Đã đăng nhập ² | ✅ | `Profile` *(stub)* | `/profile` |
 | `GET` | `/api/products` | 🌐 Công khai | ✅ | `ProductList`, `ProductDetail` ⁵ | `/`, `/:nameId` |
 | `GET` | `/api/products/{id}` | 🌐 Công khai | ✅ | `ProductDetail` | `/:nameId` |
 | `GET` | `/api/categories` | 🌐 Công khai | ✅ | `ProductList` (thanh lọc) | `/` |
@@ -325,10 +327,10 @@ Ba mức quyền dùng trong toàn bộ tài liệu này:
 | `POST` | `/api/admin/products` | 👑 ADMIN | ✅ | chưa có màn admin ⁶ | — |
 | `PUT` | `/api/admin/products/{id}` | 👑 ADMIN | ✅ | chưa có màn admin ⁶ | — |
 | `DELETE` | `/api/admin/products/{id}` | 👑 ADMIN | ✅ | chưa có màn admin ⁶ | — |
-| `POST` | `/api/admin/upload-image` | 👑 ADMIN | ⬜ b8 | chưa có màn admin ⁶ | — |
-| `GET` | `/api/admin/orders` | 👑 ADMIN | ⬜ b8 | chưa có màn admin ⁶ | — |
-| `PUT` | `/api/admin/orders/{id}/status` | 👑 ADMIN | ⬜ b8 | chưa có màn admin ⁶ | — |
-| `GET` | `/api/admin/users` | 👑 ADMIN | ⬜ b8 | chưa có màn admin ⁶ | — |
+| `POST` | `/api/admin/upload-image` | 👑 ADMIN | ✅ | chưa có màn admin ⁶ | — |
+| `GET` | `/api/admin/orders` | 👑 ADMIN | ✅ | chưa có màn admin ⁶ | — |
+| `PUT` | `/api/admin/orders/{id}/status` | 👑 ADMIN | ✅ | chưa có màn admin ⁶ | — |
+| `GET` | `/api/admin/users` | 👑 ADMIN | ✅ | chưa có màn admin ⁶ | — |
 
 ¹ Phải công khai. Nó được gọi đúng vào lúc access token đã hết hạn, nên không thể đòi access token
 hợp lệ. Nó tự xác thực bằng refresh token nằm trong body.
@@ -346,9 +348,6 @@ hợp lệ. Nó tự xác thực bằng refresh token nằm trong body.
 `data.sql`. Màn admin nếu làm thì là một app riêng, không nhét vào FE người mua.
 
 ⁷ `Cart` gọi để hiển thị giỏ; `Header` gọi để hiện con số trên icon giỏ hàng.
-
-⁹ **Dời sang bước 8.** §11 xếp toàn bộ phần upload ảnh (`MultipartFile`, nơi lưu file, serve ảnh
-tĩnh, giới hạn dung lượng, chặn đuôi file) vào bước 8; trước đây ô này ghi nhầm là b3.
 
 ⁸ **Route đề xuất, chưa tồn tại** trong `FE/src/constants/path.ts`. Ghi ở đây để khi dựng màn thì
 dùng đúng đường dẫn đã thống nhất, khỏi phải sửa link sau.
@@ -531,7 +530,9 @@ xuất hiện trong response — xem §7.6. FE không cần xử lý trường h
 | `CANCELLED` | Đã huỷ — trạng thái cuối | — |
 
 `paymentMethod`: `COD` (v1 chỉ hỗ trợ cái này) | `BANK_TRANSFER`.
-`paymentStatus`: `UNPAID` | `PAID` | `REFUNDED`.
+`paymentStatus`: `UNPAID` | `PAID` | `REFUNDED`. Đơn tạo ra luôn là `UNPAID`. Đơn COD tự thành `PAID`
+đúng lúc admin chuyển sang `DELIVERED` (shipper thu tiền khi giao), không có API nào sửa riêng
+`paymentStatus` — xem §9.1.
 
 Công thức: `totalAmount = subtotal + shippingFee - discount`. v1 để `shippingFee` cố định 30.000₫ và
 `discount` luôn bằng 0 (chưa có voucher).
@@ -727,20 +728,24 @@ Cập nhật profile. Tất cả field đều optional — gửi field nào cậ
 
 **Response `200`** — user sau khi cập nhật.
 
-### 4.3. `POST /api/users/me/avatar` *(bước 8)*
+### 4.3. `POST /api/users/me/avatar`
 
-**Quyền:** 🔒 **Đã đăng nhập**, và chỉ thao tác được trên dữ liệu của **chính mình**
+**Quyền:** 🔒 **Đã đăng nhập**
 
 **Màn FE:** `Profile` *(hiện là stub)* — route `/profile`
 
-**Request**: `multipart/form-data`, field name là `image`. Giới hạn ≤ 1MB, chỉ nhận `.jpg` / `.jpeg` / `.png`.
+**Request**: `multipart/form-data`, field name là `image`. Tối đa 1 MiB, nội dung phải là JPEG hoặc PNG.
 
-**Response `200`**
+**Response `201`**
 ```json
-{ "url": "http://localhost:8081/images/avatar-1.jpg" }
+{ "url": "http://localhost:8081/images/82d308f4-89c6-41ad-af00-7a7608583d1f.jpg" }
 ```
 > Trả object có field `url` chứ không trả chuỗi trần — sau này muốn kèm thêm `width`, `size` thì không
 > phải đổi contract. FE lấy URL này rồi gọi tiếp `PUT /api/users/me` với field `avatar`.
+
+Endpoint này chỉ lưu file, **không** sửa `users.avatar`. Luật validate, các lỗi, cách lưu và cách phục vụ
+ảnh dùng chung với upload ảnh sản phẩm — xem §9.4. Đã kiểm cả luồng của FE: upload → `PUT /api/users/me`
+với `avatar` là URL vừa nhận → `200`, rồi `GET` URL đó → `200 image/jpeg`.
 
 ---
 
@@ -841,10 +846,38 @@ Hệ quả nhìn thấy được:
 
 | | |
 |---|---|
-| `DELETE /api/admin/products/{id}` | `204`, dòng vẫn còn dưới DB |
+| `DELETE /api/admin/products/{id}` | `204`, dòng vẫn còn dưới DB; mọi dòng giỏ hàng trỏ tới nó bị xoá thật |
 | `GET /api/products/{id}` sau đó | `404` |
 | `PUT /api/admin/products/{id}` sau đó | `404` |
 | `GET /api/products` | sản phẩm biến mất khỏi danh sách và khỏi `totalItems` |
+
+**Gỡ sản phẩm thì giỏ hàng được dọn theo.** Sau khi ghi `deleted_at`, `ProductService.deleteProduct`
+phát `ProductDeletedEvent(productId)`; `CartService.onProductDeleted` (`@EventListener`) xoá mọi dòng
+`cart_items` trỏ tới sản phẩm đó, của mọi user. Dùng sự kiện thay vì gọi thẳng `CartService` vì
+`CartService` đã phụ thuộc `ProductService` (thêm vào giỏ phải đọc sản phẩm) — gọi ngược lại thành vòng
+tròn. Đã thử: Spring in sơ đồ vòng `cartService ↔ productService` rồi dừng, app không khởi động.
+
+Listener chạy **đồng bộ**: cùng luồng, cùng transaction với `deleteProduct` (khai `MANDATORY`). Đo với một
+sản phẩm nằm trong 4 giỏ:
+
+| | Kết quả |
+|---|---|
+| `DELETE` → `204` | 4 dòng giỏ của sản phẩm → 0; dòng giỏ của sản phẩm khác còn nguyên; `deleted_at` được ghi |
+| SQL | 4 câu: `select users` (filter JWT), `select products`, `delete ci1_0 from cart_items ci1_0 where ci1_0.product_id=?`, `update products` |
+| Gỡ lại lần nữa, hoặc id không tồn tại | `404`, không có câu `delete` nào |
+| Đơn cũ có sản phẩm đó | vẫn đọc được, snapshot giữ nguyên |
+
+Câu `update products` đứng **sau** câu `delete`, dù trong code `setDeletedAt` được gọi trước: thay đổi trên
+entity nằm trong persistence context và chỉ được ghi lúc commit, còn câu `@Modifying` thì chạy ngay.
+
+Các bản làm sai đã đo (sửa tạm rồi khôi phục):
+
+| Làm sai | Hậu quả đo được |
+|---|---|
+| Viết `DELETE ci FROM CartItem ci …` (cú pháp MySQL) trong `@Query` | App không khởi động: `BadJpqlGrammarException`. JPQL chỉ có dạng `DELETE FROM CartItem ci WHERE …`; chính Hibernate mới dịch nó sang `delete ci1_0 from cart_items ci1_0 …` của MySQL |
+| Thiếu `@Modifying` | `500` (`… must be a 'select' query`). Vì cùng transaction, việc gỡ sản phẩm bị huỷ theo: `deleted_at` vẫn `NULL`, dòng giỏ còn nguyên — không có trạng thái nửa vời |
+| Bật `@Modifying(clearAutomatically = true)` | **`204` mà sản phẩm vẫn còn bán**: giỏ đã dọn nhưng `deleted_at` vẫn `NULL`, log không có câu `update products` nào. Persistence context bị xoá trước khi kịp ghi `deleted_at`, và không có lỗi nào báo ra |
+| Bỏ `@Query`, để Spring Data tự sinh `deleteByProductId` từ tên method | Vẫn đúng, nhưng 1 `select cart_items` rồi **mỗi dòng một câu `delete`** (3 dòng → 3 câu). Câu `@Query` luôn là 1 câu |
 
 **Một cái bẫy mà `@SQLRestriction` gây ra.** `CategoryService.delete()` hỏi "danh mục này còn sản
 phẩm không?" để chặn xoá. Nếu câu hỏi đó đi qua JPQL, Hibernate chèn `and deleted_at is null`, và
@@ -1144,9 +1177,9 @@ JOIN và không cho chọn kiểu join). Với INNER JOIN, điều kiện `delet
 chèn vào khiến dòng giỏ hàng không khớp được với sản phẩm nào và **rơi khỏi kết quả** — đúng hành vi
 mong muốn, và không còn proxy nào để ném lỗi.
 
-**Rác còn lại:** dòng `cart_items` đó vẫn nằm dưới DB vĩnh viễn, chỉ là không ai nhìn thấy. Vô hại
-nhưng tích tụ. Dọn nó là việc của bước 8 (khi admin xoá sản phẩm thì xoá luôn các dòng giỏ hàng trỏ
-tới nó), không phải của bước 6.
+Bình thường không có bản ghi nào như vậy: admin gỡ sản phẩm thì các bản ghi giỏ hàng trỏ tới nó bị xoá
+ngay trong cùng transaction (§5.3). `JOIN FETCH` vẫn giữ làm lớp chặn thứ hai — một bản ghi giỏ được ghi
+đúng lúc admin đang gỡ sản phẩm vẫn có thể lọt qua.
 
 ---
 
@@ -1357,8 +1390,8 @@ Không gửi body → `400`.
 khi request trước commit mới đọc được trạng thái **mới** là `CANCELLED` → `409`. Ở đây dùng khoá bi quan
 (`DATABASE_DESIGN.md` §5 cách 3) thay vì `UPDATE` có điều kiện như khi trừ kho, vì huỷ đơn có nhiều nhánh
 với câu thông báo riêng rồi còn hoàn kho cho từng dòng — khoá **một dòng** trong một transaction ngắn là
-cách đơn giản nhất để cả chuỗi chạy tuần tự. API đổi trạng thái đơn của admin (bước 8) phải dùng chung
-khoá này, để "khách huỷ" và "admin chuyển sang `SHIPPING`" không chạy chồng lên nhau.
+cách đơn giản nhất để cả chuỗi chạy tuần tự. API đổi trạng thái đơn của admin (§9.1) khoá **cùng dòng
+đó**, để "khách huỷ" và "admin chuyển sang `SHIPPING`" không chạy chồng lên nhau — đã đo ở §9.1.
 
 Khoá nằm ở `@Lock`, **không** viết `FOR UPDATE` trong chuỗi `@Query`: JPQL không có mệnh đề đó —
 `BadJpqlGrammarException: ... mismatched input 'FOR'` và app không khởi động. Hibernate tự dịch `@Lock`
@@ -1396,17 +1429,195 @@ Nhóm này cần thiết vì phải có cách tạo dữ liệu sản phẩm/dan
 | `POST` | `/api/admin/products` | Tạo sản phẩm — body gồm các field ở mục 2.3 (trừ `id`, `sold`, `view`, `rating`) |
 | `PUT` | `/api/admin/products/{id}` | Sửa sản phẩm |
 | `DELETE` | `/api/admin/products/{id}` | Xoá sản phẩm — **soft delete**, xem `DATABASE_DESIGN.md` mục 4.3 |
-| `POST` | `/api/admin/upload-image` | Upload ảnh sản phẩm, `multipart/form-data`, trả URL string |
+| `POST` | `/api/admin/upload-image` | Upload ảnh sản phẩm, `multipart/form-data`, trả `{ url }` — xem §9.4 |
 | `GET` | `/api/admin/orders` | Xem tất cả đơn hàng (mọi user), có phân trang + lọc theo status |
-| `PUT` | `/api/admin/orders/{id}/status` | Đổi trạng thái đơn — body `{ "status": "CONFIRMED" }` |
+| `PUT` | `/api/admin/orders/{id}/status` | Đổi trạng thái đơn — body `{ status, cancelledReason? }`, xem §9.1 |
 | `GET` | `/api/admin/users` | Danh sách user, có phân trang |
 
-**Quy tắc chuyển trạng thái** ở `PUT /api/admin/orders/{id}/status`: chỉ cho phép đi theo đúng luồng
-`PENDING → CONFIRMED → SHIPPING → DELIVERED`, hoặc sang `CANCELLED` từ `PENDING`/`CONFIRMED`.
-Chuyển sai luồng (ví dụ từ `DELIVERED` về `PENDING`) → `409`.
+### 9.1. `PUT /api/admin/orders/{id}/status` — đổi trạng thái đơn
 
-> Giai đoạn đầu có thể bỏ qua upload ảnh, dùng URL ảnh sẵn có trên internet và seed dữ liệu bằng
-> file `data.sql` cho nhanh.
+**Request**
+```json
+{ "status": "CANCELLED", "cancelledReason": "Hết hàng" }
+```
+
+**Validation body**
+
+| Trường | Luật | Vi phạm |
+|---|---|---|
+| `status` | bắt buộc, một trong 5 giá trị ở §2.5, phân biệt hoa thường | thiếu → `422`; giá trị lạ (`"ABC"`, `"pending"`) → `400` vì Jackson không đọc được enum (§1.6) |
+| `cancelledReason` | tối đa 255; **bắt buộc khi `status = CANCELLED`**, không được toàn dấu cách | `422` |
+
+"Bắt buộc khi `CANCELLED`" là luật giữa **hai** field nên annotation không diễn đạt được. Nó nằm đầu
+`OrderService.changeStatus` và ném `FieldValidationException`, nên lỗi ra cùng hình dạng `422` với lỗi
+annotation (`errors.cancelledReason`). Kiểm trước khi đọc DB: request chắc chắn sai thì không cần khoá
+dòng. Gửi `cancelledReason` kèm trạng thái khác thì bị bỏ qua.
+
+**Máy trạng thái** — đã đo đủ 25 cặp (5 trạng thái hiện tại × 5 trạng thái đích):
+
+| Hiện tại ↓ / sang → | `PENDING` | `CONFIRMED` | `SHIPPING` | `DELIVERED` | `CANCELLED` |
+|---|---|---|---|---|---|
+| `PENDING` | `409` | `200` | `409` | `409` | `200` + hoàn kho |
+| `CONFIRMED` | `409` | `409` | `200` | `409` | `200` + hoàn kho |
+| `SHIPPING` | `409` | `409` | `409` | `200` + `PAID` | `409` |
+| `DELIVERED` | `409` | `409` | `409` | `409` | `409` |
+| `CANCELLED` | `409` | `409` | `409` | `409` | `409` |
+
+Chuyển sang chính nó (`PENDING → PENDING`) cũng là `409`: request không đổi được gì thì báo cho admin
+biết, thay vì lặng lẽ trả `200`.
+
+`title` của `409`: `Không thể chuyển đơn hàng từ <hiện tại> sang <đích>`, ví dụ `Không thể chuyển đơn
+hàng từ Đã giao sang Chờ xác nhận`. Nhãn lấy từ `OrderStatus.getLabel()`. Khác với khách huỷ (§8.4) có
+một câu riêng cho từng trạng thái: phía admin có 20 cặp sai nên dùng một câu chung, ghép tên hai trạng thái.
+
+**Luật nằm ở đâu.** `OrderStatus.canTransitionTo(next)` là một `switch` *expression* trên enum; trình
+biên dịch bắt phải liệt kê đủ mọi trạng thái, nên thêm trạng thái mới mà quên khai luồng đi thì không
+compile được. `Order.changeStatus(next, reason)` là cửa duy nhất để admin đổi trạng thái (khách thì qua
+`Order.cancel`) — entity không có setter nào cho `status`.
+
+**Tác dụng kèm theo**
+
+| Chuyển sang | Ngoài `status`, còn đổi gì |
+|---|---|
+| `CANCELLED` | Lưu `cancelledReason`; hoàn kho từng dòng qua `restock(order)` — **chung** với khách huỷ (§8.4), kể cả trường hợp sản phẩm đã xoá mềm |
+| `DELIVERED` (đơn COD) | `paymentStatus` → `PAID`. Đo cả luồng qua API: `CONFIRMED` và `SHIPPING` vẫn `UNPAID`, tới `DELIVERED` thành `PAID`; kho không đổi suốt luồng |
+| còn lại | Không đổi gì khác, không đụng kho |
+
+**Logic nghiệp vụ** — một `@Transactional`:
+
+1. Kiểm luật "huỷ phải có lý do" → `422`.
+2. `OrderRepository.findByIdForUpdate(id)` — `@Lock(PESSIMISTIC_WRITE)`, **không** có điều kiện `user_id`
+   vì admin đổi được đơn của mọi người. Không tồn tại → `404 Không tìm thấy đơn hàng`.
+3. `order.changeStatus(...)` — sai luồng → `409`, xảy ra **trước** khi hoàn kho nên `409` không đụng kho.
+4. Sang `CANCELLED` thì `restock(order)`.
+5. `saveAndFlush` rồi mới dựng response, để `updatedAt` là giờ mới (như §8.4).
+
+**Response `200`** — đơn sau khi đổi, object Order ở §2.5, kèm `items`.
+
+**Chạy cùng lúc với khách huỷ đơn.** Hai API cùng khoá **một dòng** `orders`, nên bên tới sau đứng chờ
+ở câu `select … for update` rồi đọc được trạng thái bên kia vừa ghi. Đã đo, mỗi kịch bản 10 lượt, đơn
+đang `CONFIRMED` có 2 món:
+
+| Kịch bản | Code thật | Tạm bỏ khoá ở phía admin (`findById`) |
+|---|---|---|
+| Admin gửi `SHIPPING`, khách gửi huỷ, cùng xuất phát | 10/10: admin `200`, khách `409 Đơn hàng đang được giao, không thể hủy`. Kho giữ nguyên | **8/10 cả hai cùng `200`**: DB ghi `SHIPPING`, lý do huỷ bị xoá mất, **kho vẫn bị cộng 2** — hàng đang đi giao mà kho đã nhận lại, còn khách thì được báo "đã huỷ" |
+| Khách gửi huỷ trước 30 ms | 10/10: khách `200`, admin `409 Không thể chuyển đơn hàng từ Đã hủy sang Đang giao`. Kho `+2` | 2/10 cả hai cùng `200`, cùng hậu quả như trên |
+
+Ai thắng không quan trọng; cái được đảm bảo là **chỉ một bên thắng**. Bản làm sai hỏng vì câu `SELECT`
+thường của admin không chờ khoá của khách — `SELECT` thường không bao giờ chờ khoá dòng, nó đọc bản đã
+commit gần nhất (`DATABASE_DESIGN.md` §6) — nên vẫn thấy `CONFIRMED`. Tới câu `UPDATE` nó mới phải chờ, và khi khách commit xong thì nó ghi đè lên. Hibernate
+mặc định `UPDATE` **mọi cột** của entity, nên `cancelled_reason` cũng bị ghi lại thành `NULL`. Bài học:
+khoá chỉ có tác dụng khi **mọi** đường ghi vào dòng đó đều khoá — một bên khoá một bên không thì cũng
+như không khoá.
+
+### 9.2. `GET /api/admin/orders` — mọi đơn hàng
+
+Giống hệt `GET /api/orders` (§8.2) — cùng record `OrderQuery`, cùng param `status`/`page`/`limit`, cùng
+mặc định và mức chặn `limit ≤ 50`, cùng thứ tự `created_at DESC, id DESC`, cùng response
+`PagedResponse` kèm `items`. Khác duy nhất: **không** lọc theo `user_id`. Đã kiểm: `totalItems` khớp
+`COUNT(*)` của bảng `orders`, 10 đơn đầu đúng là 10 đơn mới nhất, `?status=CANCELLED` khớp số đơn huỷ.
+
+**4 câu SQL mỗi trang:** 1 `SELECT users` (filter JWT nạp người gọi), 1 lấy đơn (`LIMIT`), 1 `COUNT`,
+1 lấy dòng hàng (`@BatchSize`). Ít hơn §8.2 một câu `SELECT users`: danh sách admin không cần `id`
+của người gọi, nên service không phải tra user theo email lần nữa.
+
+Câu lấy đơn dùng index `idx_order_created`, đo bằng `EXPLAIN` ở `DATABASE_DESIGN.md` §3.6.
+
+### 9.3. `GET /api/admin/users` — danh sách user
+
+| Param | Kiểu | Mặc định | Ý nghĩa |
+|---|---|---|---|
+| `page` | int | `1` | như §8.2 |
+| `limit` | int | `10` | như §8.2, tối đa `50` |
+
+Nhận qua record `UserQuery`, cùng luật với `OrderQuery`. Thứ tự: đăng ký mới nhất trước,
+`created_at DESC, id DESC`.
+
+**Response `200`** — `PagedResponse` của object User ở §2.1. **Không có `password`**: `UserResponse`
+không có field đó, nên hash không thể lọt ra dù entity `User` có. Đã kiểm trên JSON thật: không có
+chuỗi `password`, cũng không có tiền tố BCrypt `$2a$`.
+
+3 câu SQL mỗi trang: 1 `SELECT users` của filter JWT, 1 lấy trang, 1 `COUNT`. Bảng `users` không có
+index `created_at` nên MySQL sắp xếp cả bảng (`EXPLAIN`: `ALL`, `Using filesort`). Với v1 thì chấp nhận
+được; khi số user lớn thì thêm index như `idx_order_created`.
+
+### 9.4. Upload ảnh: `POST /api/admin/upload-image` và `POST /api/users/me/avatar`
+
+Hai endpoint dùng chung `ImageStorageService.store()` và chỉ khác nhau ở quyền: ảnh sản phẩm thì 👑 ADMIN,
+avatar thì 🔒 đã đăng nhập. Cả hai **chỉ lưu file và trả URL**, không ghi DB. FE lấy URL đó rồi gửi tiếp
+trong `POST`/`PUT /api/admin/products` (field `image`, `images[]`) hoặc `PUT /api/users/me` (field `avatar`).
+
+**Request:** `multipart/form-data`, một field tên `image`.
+```bash
+curl -X POST http://localhost:8081/api/admin/upload-image \
+  -H "Authorization: Bearer <token>" -F "image=@ao-thun.jpg"
+```
+
+**Response `201`** — tạo ra một file mới, nên theo §1.6 là `201`:
+```json
+{ "url": "http://localhost:8081/images/43b94864-6a4d-4e6f-8888-fa052744d0f6.png" }
+```
+
+**Các lỗi**
+
+| Tình huống | Status | `type` / `title` |
+|---|---|---|
+| Thiếu field `image`, sai tên field, hoặc file 0 byte | `422` | `errors.image = "Vui lòng chọn ảnh"` |
+| Nội dung không phải JPEG/PNG (kể cả HTML đổi đuôi `.jpg`, SVG) | `422` | `errors.image = "Chỉ nhận ảnh PNG hoặc JPEG"` |
+| File lớn hơn 1 MiB (1.048.576 byte) | `413` | `/errors/content-too-large`, `Ảnh tải lên tối đa 1MB` |
+| Body không phải multipart (ví dụ JSON) | `415` | `… hãy dùng multipart/form-data` |
+| Không token / USER gọi endpoint admin | `401` / `403` | |
+
+Thiếu field `image` ra `422` chứ không phải `400`: controller khai `@RequestParam(required = false)` để service
+tự kiểm và trả lỗi có tên field, giống thiếu một field trong JSON. Các ca bị từ chối không để lại file nào
+trên đĩa.
+
+**Kiểm định dạng bằng nội dung, không bằng thứ client khai.** Tên file, đuôi file và `Content-Type` của
+từng phần trong multipart đều do client tự ghi. Service đọc 8 byte đầu và so với *magic number*: JPEG
+`FF D8 FF`, PNG `89 50 4E 47 0D 0A 1A 0A`. Đuôi file trên đĩa do **server** đặt theo kết quả đó, nên một
+PNG gửi với tên `ao-thun.jpg` và `type=image/jpeg` vẫn được lưu thành `.png`, và lúc phục vụ lại thì
+`Content-Type` luôn khớp với nội dung.
+
+Đã đo bản làm sai — lấy đuôi theo tên file client gửi, cách nhiều hướng dẫn trên mạng vẫn làm: file
+`hack.html` khai `type=image/png` được nhận `201`, lưu thành `<uuid>.html`, và `GET` URL đó trả `200
+Content-Type: text/html` kèm nguyên thẻ `<script>`. Nghĩa là ai có quyền upload cũng đặt được một trang
+web chạy JavaScript dưới domain của BE (stored XSS). Code thật trả `422` cho đúng file đó.
+
+Giới hạn: magic number chỉ kiểm phần đầu. File có đầu PNG mà phần sau là rác vẫn lọt qua. Nó không gây
+hại, vì được phục vụ với `image/png` kèm header `X-Content-Type-Options: nosniff` (Spring Security tự thêm),
+cấm trình duyệt tự đoán lại kiểu file.
+
+**Tên file là UUID**, không dùng tên client gửi. Không ký tự nào của client đi vào đường dẫn, nên không có
+chuyện thoát ra khỏi thư mục: gửi `filename="../../../evil.png"` → lưu thành `<uuid>.png` trong
+`BE/uploads`, bên ngoài không xuất hiện file nào.
+
+**Nơi lưu:** thư mục `app.upload.dir` (đang là `uploads`, tính từ thư mục chạy app — chạy `./mvnw` trong
+`BE/` thì là `BE/uploads`, đã có trong `.gitignore`). Đường dẫn tuyệt đối được in ra log lúc khởi động.
+Một server thì đủ dùng; chạy nhiều server thì phải chuyển sang object storage (`SYSTEM_DESIGN.md` §1.3).
+Chỉ `ImageStorageService` biết file nằm ở đâu, nên lúc đó chỉ phải sửa một class.
+
+**Giới hạn dung lượng** đặt bằng `spring.servlet.multipart.max-file-size=1MB` (cả request tối đa `2MB`, vì
+còn boundary và header). Spring kiểm lúc đọc body, **trước** khi vào controller, rồi ném
+`MaxUploadSizeExceededException` → `413`. Đo được: đúng 1.048.576 byte → `201`, thêm 1 byte → `413`.
+File 5 MiB và 30 MiB vẫn nhận đủ response `413`, Tomcat không cắt kết nối giữa chừng.
+
+**Phục vụ ảnh: `GET /images/{tên file}`** — 🌐 công khai, vì thẻ `<img>` không gửi được header
+`Authorization`. `WebConfig.addResourceHandlers` nối `/images/**` với thư mục upload. Đo được:
+
+| Gọi | Kết quả |
+|---|---|
+| URL vừa nhận, không token | `200`, `Content-Type` đúng `image/png` / `image/jpeg`, byte giống hệt bản gửi, có `nosniff` |
+| Gọi lại kèm `If-Modified-Since` | `304` — trình duyệt dùng bản đã cache |
+| File không tồn tại | `404` ProblemDetail |
+| `/images/../application.properties`, `/images/..%2f..%2fpom.xml`, `/images/%2e%2e/…` | `401` / `400`, không lộ file nào |
+
+**Dấu `/` cuối của `app.upload.public-url` chỉ được có đúng một lần.** Ghép thêm một dấu nữa trong code thì
+URL thành `/images//<uuid>.png`. `StrictHttpFirewall` của Spring Security từ chối mọi URL chứa `//`, kể cả
+khi có token hợp lệ, nên client nhận `401` khó hiểu — trong khi URL hỏng đã kịp lưu vào DB. Đã gặp lỗi này
+lúc làm bước 8.
+
+**Chưa làm ở v1:** file đã upload mà không ai dùng tới (upload xong không gọi `PUT`, hoặc đổi avatar lần
+nữa) vẫn nằm lại trên đĩa, chưa có việc dọn. Cũng chưa giới hạn số lần upload của một user.
 
 ---
 
@@ -1419,7 +1630,7 @@ Chuyển sai luồng (ví dụ từ `DELIVERED` về `PENDING`) → `409`.
 | Đường dẫn | ✅ `/api/*` đã đúng prefix | — |
 | `id` dạng string | ✅ Mọi DTO response, kể cả `OrderResponse` và `productId` trong `OrderItemResponse` | — |
 | Response register | ✅ Trả `{accessToken, expires, user}` | — |
-| Validation | ✅ Auth, User, Category, Product | Query param của `GET /api/products` validate ở `ProductQuery.validate()`, không qua `@Valid` |
+| Validation | ✅ Body của Auth, User, Category, Product, Cart, Order, đổi trạng thái đơn của admin qua `@Valid`; luật chéo giữa hai field (huỷ phải có lý do) ở service. Query param của `GET /api/products`, `GET /api/orders`, `GET /api/admin/orders`, `GET /api/admin/users` nhận qua record + `@ModelAttribute`; `sortBy` kiểm ở `ProductQuery.validate()`; sai kiểu → `400` (§1.6) | — |
 | CORS | ✅ Đã bật cho `localhost:3000` | — |
 | JWT filter | ✅ `JwtAuthenticationFilter` (`OncePerRequestFilter`) | — |
 | Bảo vệ endpoint | ✅ Phân quyền theo nhóm + `STATELESS` | Thêm rule khi có endpoint mới |
@@ -1429,7 +1640,12 @@ Chuyển sai luồng (ví dụ từ `DELIVERED` về `PENDING`) → `409`.
 | Entity Category | ✅ Entity + CRUD đầy đủ, `Product.category` `@ManyToOne` | — |
 | Entity CartItem | ✅ Entity + 5 endpoint, `UNIQUE(user_id, product_id)`, quyền sở hữu ở tầng service | — |
 | Entity Order / OrderItem | ✅ Entity + 4 endpoint §8, đã kiểm cả chạy song song (`DATABASE_DESIGN.md` §5) | — |
-| Phân trang / lọc | ✅ `GET /api/products` (`Pageable` + `Specification`), `GET /api/orders` (`Pageable` + lọc `status`) | — |
+| Máy trạng thái đơn | ✅ `PUT /api/admin/orders/{id}/status`: đủ 25 cặp chuyển, huỷ thì hoàn kho, COD giao xong thành `PAID`, khoá chung dòng với khách huỷ (§9.1) | — |
+| API quản trị | ✅ Đơn hàng, user, danh mục, sản phẩm, upload ảnh | — |
+| Dọn giỏ khi gỡ sản phẩm | ✅ `ProductDeletedEvent` → `CartService.onProductDeleted`, một câu `DELETE`, cùng transaction (§5.3) | — |
+| Upload ảnh | ✅ `MultipartFile`, kiểm magic number, tên UUID, tối đa 1MB → `413`, phục vụ ở `/images/**` (§9.4) | File không dùng tới vẫn nằm trên đĩa; chuyển object storage khi chạy nhiều server |
+| Phân trang / lọc | ✅ `GET /api/products` (`Pageable` + `Specification`), `GET /api/orders` và `GET /api/admin/orders` (`Pageable` + lọc `status`), `GET /api/admin/users` | — |
+| Tranh chấp ràng buộc `UNIQUE` | ⚠️ Hai request cùng lúc cùng đụng một `UNIQUE` (`users.email`, `categories.name`, `cart_items(user_id, product_id)`, `orders.order_code`): request thua nhận `DataIntegrityViolationException` → `500`. Dữ liệu vẫn đúng, chỉ status sai | Thêm handler trong `GlobalExceptionHandler` → `409` |
 
 ---
 
@@ -1444,10 +1660,12 @@ Chuyển sai luồng (ví dụ từ `DELIVERED` về `PENDING`) → `409`.
 | **5** ✅ | Nâng cấp Product: đủ field, phân trang, lọc, sắp xếp, soft delete | `Pageable`, `Specification`, `@SQLRestriction`, `@OneToMany` + `orphanRemoval` |
 | **6** ✅ | Cart | Ràng buộc `UNIQUE`, logic cộng dồn, quyền sở hữu theo bản ghi, `JOIN FETCH` |
 | **7** ✅ | Order: đặt hàng + huỷ đơn | `@Transactional`, snapshot, race condition tồn kho |
-| **8** | Admin + upload ảnh | `@PreAuthorize`, `MultipartFile`, máy trạng thái |
+| **8** ✅ | Admin + upload ảnh: đổi trạng thái đơn, danh sách đơn/user cho admin, upload ảnh, dọn giỏ khi gỡ sản phẩm | `@PreAuthorize`, `MultipartFile`, máy trạng thái, Spring event |
 | **9** | *(Tuỳ chọn)* Refresh token + đưa `role` vào payload token, hạ TTL — xem §3.4 | Token lifecycle |
 
-Sau bước 7 là đã đủ để FE chạy hoàn chỉnh với BE này.
+Sau bước 7 là đã đủ để FE chạy hoàn chỉnh với BE này. Sau bước 8, cả 28/29 endpoint ở §1.10 đã có; chỉ còn
+`refresh-token` của bước 9 (tuỳ chọn). Hồi quy cuối bước 8 (2026-10-04): 144/144 ca đạt — 98 ca phủ bước 3–8
+kể cả 3 kịch bản chạy song song, 32 ca upload, 14 ca dọn giỏ — log không có lỗi `500` nào.
 
 ---
 

@@ -1,7 +1,13 @@
 package com.duynh.shopee.user;
 
+import com.duynh.shopee.common.PagedResponse;
 import com.duynh.shopee.exception.FieldValidationException;
 import com.duynh.shopee.exception.NotFoundException;
+
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -78,5 +84,14 @@ public class UserService {
     public User getEntityByEmail(String email) {
         return userRepository.findByEmail(email)
                 .orElseThrow(() -> new NotFoundException("Không tìm thấy người dùng"));
+    }
+
+    @Transactional(readOnly = true)
+    public PagedResponse<UserResponse> getAllUsers(UserQuery q) {
+        Sort sort = Sort.by(Sort.Direction.DESC, "createdAt").and(Sort.by(Sort.Direction.DESC, "id")); // mới → cũ
+        Pageable pageable = PageRequest.of(q.page() - 1, q.limit(), sort); // Spring đếm từ trang 0
+
+        Page<User> users = userRepository.findAll(pageable);
+        return PagedResponse.from(users.map(UserResponse::from));
     }
 }

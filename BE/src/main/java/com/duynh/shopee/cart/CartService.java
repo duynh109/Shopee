@@ -2,6 +2,7 @@ package com.duynh.shopee.cart;
 
 import java.util.List;
 
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -10,6 +11,7 @@ import com.duynh.shopee.exception.ConflictException;
 import com.duynh.shopee.exception.FieldValidationException;
 import com.duynh.shopee.exception.NotFoundException;
 import com.duynh.shopee.product.Product;
+import com.duynh.shopee.product.ProductDeletedEvent;
 import com.duynh.shopee.product.ProductService;
 import com.duynh.shopee.user.User;
 import com.duynh.shopee.user.UserService;
@@ -111,5 +113,13 @@ public class CartService {
         if (deleted != ids.size()) {
             throw new ConflictException("Giỏ hàng vừa thay đổi vui lòng thử lại");
         }
+    }
+
+    // Không ai gọi trực tiếp: Spring tự gọi khi ProductService.deleteProduct phát ProductDeletedEvent,
+    // ngay trong transaction của nó — xoá giỏ lỗi thì việc gỡ sản phẩm cũng bị huỷ theo.
+    @EventListener
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void onProductDeleted(ProductDeletedEvent event) {
+        cartItemRepository.deleteByProductId(event.productId());
     }
 }

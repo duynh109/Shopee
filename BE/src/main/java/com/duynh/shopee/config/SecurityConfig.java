@@ -51,6 +51,8 @@ public class SecurityConfig {
                         // ---- Công khai: không cần đăng nhập ----
                         .requestMatchers(HttpMethod.POST, "/api/auth/register", "/api/auth/login").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/products/**", "/api/categories/**").permitAll()
+                        // Ảnh được nạp bằng <img src>, thẻ đó không gửi được header Authorization
+                        .requestMatchers(HttpMethod.GET, "/images/**").permitAll()
 
                         // ---- Chỉ ADMIN ----
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")

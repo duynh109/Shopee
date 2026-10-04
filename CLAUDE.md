@@ -10,7 +10,7 @@ FE/     React + TypeScript + Vite — port 3000
 
 | File | Nội dung |
 |---|---|
-| `docs/API_SPEC.md` | Contract API giữa BE và FE. **§1.10 là bảng quyền chính thức**: cả 32 endpoint, ai gọi được, đã làm chưa, và **màn FE nào gọi tới** kèm route của màn đó. §11 là lộ trình 9 bước. |
+| `docs/API_SPEC.md` | Contract API giữa BE và FE. **§1.10 là bảng quyền chính thức**: cả 29 endpoint, ai gọi được, đã làm chưa, và **màn FE nào gọi tới** kèm route của màn đó. §11 là lộ trình 9 bước. |
 | `docs/DATABASE_DESIGN.md` | Schema v1 (7 bảng) và lý do đằng sau từng quyết định |
 | `docs/SYSTEM_DESIGN.md` | Lộ trình mở rộng, chưa cần cho v1 |
 
@@ -41,6 +41,12 @@ khi làm gì — đừng suy ra tiến độ từ code, và khi làm xong một 
 - Project dùng **Jackson 3** (`tools.jackson.databind`), **không** phải `com.fasterxml.jackson`.
   Jackson 2 có trên classpath nhưng chỉ ở scope `runtime` do `jjwt-jackson` kéo vào.
 - `HttpStatus.UNPROCESSABLE_CONTENT` (không dùng `UNPROCESSABLE_ENTITY` — đã deprecated ở Spring 7).
+- **Service gọi service của module khác, không gọi repository của nó.** Ví dụ `OrderService` trừ kho qua
+  `ProductService.decreaseStock()`, không inject `ProductRepository`. Hai ngoại lệ đã biết, kèm lý do, ở
+  `docs/SYSTEM_DESIGN.md` Level 2.
+- `@Transactional` lấy từ `org.springframework.transaction.annotation`, **không** phải
+  `jakarta.transaction` — IDE hay tự import nhầm. Khoá dòng thì dùng `@Lock(LockModeType...)`, không viết
+  `FOR UPDATE` trong chuỗi JPQL (JPQL không có cú pháp đó, app sẽ không khởi động).
 
 ## Chạy
 

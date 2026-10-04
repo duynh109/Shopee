@@ -28,4 +28,10 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT o FROM Order o WHERE o.id = :id AND o.user.id = :userId")
     Optional<Order> findByIdAndUserIdForUpdate(@Param("id") Long id, @Param("userId") Long userId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT o FROM Order o WHERE o.id = :id")
+    Optional<Order> findByIdForUpdate(@Param("id") Long id);
+
+    Page<Order> findByStatus(OrderStatus status, Pageable pageable);
 }

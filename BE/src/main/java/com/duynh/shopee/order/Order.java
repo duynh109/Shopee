@@ -20,7 +20,10 @@ import lombok.NoArgsConstructor;
 
 @Getter
 @Entity
-@Table(name = "orders", indexes = @Index(name = "idx_order_user_status", columnList = "user_id, status"))
+@Table(name = "orders", indexes = {
+        @Index(name = "idx_order_user_status", columnList = "user_id, status"),
+        @Index(name = "idx_order_created", columnList = "created_at"),
+})
 @NoArgsConstructor
 @EntityListeners(AuditingEntityListener.class)
 public class Order {
@@ -122,6 +125,20 @@ public class Order {
             case SHIPPING -> throw new ConflictException("Đơn hàng đang được giao, không thể hủy");
             case DELIVERED -> throw new ConflictException("Đơn hàng đã giao, không thể hủy");
             case CANCELLED -> throw new ConflictException("Đơn hàng đã được hủy trước đó");
+        }
+    }
+
+    public void changeStatus(OrderStatus next, String reason) {
+        if (!this.status.canTransitionTo(next)) {
+            throw new ConflictException(
+                    "Không thể chuyển đơn hàng từ " + this.status.getLabel() + " sang " + next.getLabel());
+        }
+        this.status = next;
+        if (next == OrderStatus.CANCELLED) {
+            this.cancelledReason = reason;
+        }
+        if (next == OrderStatus.DELIVERED && this.paymentMethod == PaymentMethod.COD) {
+            this.paymentStatus = PaymentStatus.PAID;
         }
     }
 

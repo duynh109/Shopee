@@ -80,8 +80,7 @@ public class OrderService {
     @Transactional(readOnly = true)
     public PagedResponse<OrderResponse> getMyOrders(String email, OrderQuery q) {
         User user = userService.getEntityByEmail(email);
-        Sort sort = Sort.by(Sort.Direction.DESC, "createdAt").and(Sort.by(Sort.Direction.DESC, "id")); // mới → cũ
-        Pageable pageable = PageRequest.of(q.page() - 1, q.limit(), sort); // Spring đếm từ trang 0
+        Pageable pageable = pageable(q);
 
         Page<Order> orders;
         if (q.status() == null) {
@@ -105,13 +104,37 @@ public class OrderService {
         Order order = orderRepository.findByIdAndUserIdForUpdate(id, user.getId())
                 .orElseThrow(() -> new NotFoundException("Không tìm thấy đơn hàng"));
         order.cancel(request.cancelledReason());
+        restock(order);
+        orderRepository.saveAndFlush(order);
+        return OrderResponse.from(order);
+    }
 
-        // Trả lại kho từng món. Không cần check số lượng vì đơn đã trừ kho thành công
-        for (OrderItem item : order.getOrderItems()) {
-            productService.increaseStock(item.getProduct().getId(), item.getQuantity());
+    @Transactional
+    public OrderResponse changeStatus(Long id, UpdateOrderStatusRequest request) {
+        if (request.status() == OrderStatus.CANCELLED
+                && (request.cancelledReason() == null || request.cancelledReason().isBlank())) {
+            throw new FieldValidationException("cancelledReason", "Vui lòng nhập lý do hủy đơn");
+        }
+        Order order = orderRepository.findByIdForUpdate(id)
+                .orElseThrow(() -> new NotFoundException("Không tìm thấy đơn hàng"));
+        order.changeStatus(request.status(), request.cancelledReason());
+        if (request.status() == OrderStatus.CANCELLED) {
+            restock(order);
         }
         orderRepository.saveAndFlush(order);
         return OrderResponse.from(order);
+    }
+
+    @Transactional(readOnly = true)
+    public PagedResponse<OrderResponse> getAllOrders(OrderQuery q) {
+        Pageable pageable = pageable(q);
+        Page<Order> orders;
+        if (q.status() == null) {
+            orders = orderRepository.findAll(pageable);
+        } else {
+            orders = orderRepository.findByStatus(q.status(), pageable);
+        }
+        return PagedResponse.from(orders.map(OrderResponse::from));
     }
 
     private String generateOrderCode() {
@@ -127,5 +150,17 @@ public class OrderService {
     private Order findOwnedOrThrow(Long id, Long userId) {
         return orderRepository.findByIdAndUserId(id, userId)
                 .orElseThrow(() -> new NotFoundException("Không tìm thấy đơn hàng"));
+    }
+
+    private void restock(Order order) {
+        // Trả lại kho từng món. Không cần check số lượng vì đơn đã trừ kho thành công
+        for (OrderItem item : order.getOrderItems()) {
+            productService.increaseStock(item.getProduct().getId(), item.getQuantity());
+        }
+    }
+
+    private Pageable pageable(OrderQuery q) {
+        Sort sort = Sort.by(Sort.Direction.DESC, "createdAt").and(Sort.by(Sort.Direction.DESC, "id")); // mới → cũ
+        return PageRequest.of(q.page() - 1, q.limit(), sort); // Spring đếm từ trang 0
     }
 }

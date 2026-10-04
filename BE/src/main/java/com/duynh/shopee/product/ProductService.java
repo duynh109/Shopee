@@ -2,6 +2,7 @@ package com.duynh.shopee.product;
 
 import java.time.Instant;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -22,9 +23,13 @@ public class ProductService {
     private final ProductRepository productRepository;
     private final CategoryService categoryService;
 
-    public ProductService(ProductRepository productRepository, CategoryService categoryService) {
+    private final ApplicationEventPublisher eventPublisher;
+
+    public ProductService(ProductRepository productRepository, CategoryService categoryService,
+            ApplicationEventPublisher eventPublisher) {
         this.productRepository = productRepository;
         this.categoryService = categoryService;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional(readOnly = true)
@@ -73,10 +78,16 @@ public class ProductService {
         return ProductResponse.from(productRepository.saveAndFlush(product));
     }
 
+    /**
+     * Admin gỡ sản phẩm: chỉ đánh dấu deleted_at (xoá mềm, đơn hàng cũ vẫn giữ
+     * snapshot),
+     * rồi báo cho các module khác biết để tự dọn phần của mình (hiện có: giỏ hàng).
+     */
     @Transactional
     public void deleteProduct(Long id) {
         Product product = getEntityById(id);
         product.setDeletedAt(Instant.now());
+        eventPublisher.publishEvent(new ProductDeletedEvent(id));
     }
 
     public Product getEntityById(Long id) {

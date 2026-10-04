@@ -294,6 +294,11 @@ sớm cho người dùng, nhưng tồn kho chỉ thực sự bị trừ khi đ�
 liệu tạm. Ngược lại, khoá ngoại từ `orders` tới `users` **không** cascade: đơn hàng là dữ liệu giao dịch,
 phải giữ lại.
 
+**`product_id` thì cascade cũng vô ích.** Sản phẩm chỉ bị xoá mềm, dòng `products` không bao giờ bị
+`DELETE`, nên `ON DELETE CASCADE` không bao giờ chạy. Việc dọn nằm ở code: gỡ sản phẩm thì
+`ProductDeletedEvent` kéo theo một câu `DELETE FROM cart_items WHERE product_id = ?` trong cùng transaction
+(`API_SPEC.md` §5.3).
+
 JPA thuần **không** sinh được mệnh đề này — `@JoinColumn` chỉ tạo một `FOREIGN KEY` trơn, và xoá user sẽ
 bị MySQL chặn vì còn dòng giỏ hàng tham chiếu. Phải dùng annotation riêng của Hibernate:
 
@@ -369,8 +374,30 @@ Index này **không tốn thêm gì**: khoá ngoại `user_id` đằng nào cũn
 kiểm bằng `information_schema.STATISTICS`, bảng `orders` chỉ có `PRIMARY`, `UNIQUE(order_code)` và
 `idx_order_user_status`.
 
-**Trạng thái thực tế:** `idx_order_created` **chưa tạo**. Câu duy nhất cần nó là admin xem mọi đơn
-theo thời gian (bước 8); đơn của một user thì đã lọc qua `idx_order_user_status` rồi mới sắp xếp.
+**`idx_order_created (created_at)`** tạo ở bước 8, khai trong `@Table(indexes = ...)` của `Order`. Câu duy
+nhất cần nó là admin xem mọi đơn (`API_SPEC.md` §9.2): `ORDER BY created_at DESC, id DESC LIMIT ?` mà
+không có `WHERE`. Đo bằng `EXPLAIN`:
+
+| Câu truy vấn | Kế hoạch MySQL chọn |
+|---|---|
+| Không lọc, bảng thật **169 dòng** | `ALL` + `Using filesort` — **bỏ qua index** |
+| Như trên, ép `FORCE INDEX (idx_order_created)` | `index`, `Backward index scan`, đọc 10 dòng, không filesort |
+| Không lọc, bảng nháp **50.000 dòng** (tạo `LIKE orders`, đo xong xoá) | Tự chọn `idx_order_created`, `Backward index scan`, đọc 10 dòng |
+| Bảng nháp 50.000 dòng, bỏ index đi | `ALL`, 49.742 dòng, `Using filesort` |
+| Lọc `status = 'CANCELLED'`, bảng thật | `idx_order_created` + `Using where` — đọc theo thời gian từ mới về cũ, lọc dần tới khi đủ 10 |
+
+Hai điều rút ra:
+
+- **Index một cột vẫn phục vụ được sắp xếp hai cột.** InnoDB lưu khoá chính ở cuối mỗi mục của index
+  phụ, nên `(created_at)` thực chất được sắp theo `(created_at, id)` — đúng thứ tự `ORDER BY` cần, không
+  phải sắp lại. "Backward index scan" là MySQL 8 đọc index từ cuối lên cho `DESC`.
+- **Bảng nhỏ thì optimizer có thể bỏ qua index, và đó không phải lỗi.** Với 169 dòng (vài trang dữ liệu),
+  quét cả bảng rồi sắp trong bộ nhớ rẻ hơn đi theo index rồi nhảy về bảng chính cho từng dòng. `EXPLAIN`
+  trên dữ liệu thử ít ỏi không nói được gì về lúc có nhiều dữ liệu — phải đo trên bảng đủ lớn.
+
+Đơn của **một** user (`WHERE user_id = ? ORDER BY created_at DESC`) đi qua `idx_order_user_status` rồi
+vẫn `Using filesort`, vì index đó không chứa `created_at`. Chấp nhận được: filesort ở đây chỉ trên số đơn
+của một người.
 
 **Trạng thái đơn hàng** (`status`):
 
@@ -615,7 +642,8 @@ Chắc chắn nhất nhưng tốn kém nhất — giữ khoá càng lâu thì c�
 nếu khoá nhiều dòng theo thứ tự khác nhau.
 
 **Đang dùng ở:** huỷ đơn — `OrderRepository.findByIdAndUserIdForUpdate` khoá **một** dòng `orders`
-(`... for update of o1_0`) trong một transaction ngắn. Không dùng cho tồn kho: trừ kho là một điều kiện
+(`... for update of o1_0`) trong một transaction ngắn. Admin đổi trạng thái đơn khoá cùng dòng đó qua
+`findByIdForUpdate` (không lọc `user_id`), nên hai thao tác này luôn chạy lần lượt. Không dùng cho tồn kho: trừ kho là một điều kiện
 gọn trong một câu `UPDATE` (cách 1), còn khoá bi quan trên `products` sẽ bắt mọi đơn cùng mua một món
 phải xếp hàng suốt cả transaction đặt hàng.
 
@@ -632,12 +660,13 @@ chạy hai lần: với code thật, rồi với bản **tạm làm sai** (sửa
 | 20 người, mỗi người mua 1 món, kho còn **5** | `UPDATE … WHERE quantity >= ?` (cách 1) | 5 × `201`, 15 × `409`. Kho `0`, `sold 5` | Đổi thành đọc → kiểm bằng Java → ghi đè: **20 × `201`, bán vượt 15 món**, kho vẫn báo còn `3`, `sold 20` |
 | Một user gửi cùng lúc 2 request đặt đúng một dòng giỏ | đếm số dòng `DELETE` ở bước 7 (mục 6) | 1 × `201`, 1 × `409 Giỏ hàng vừa thay đổi`. 1 đơn, kho trừ 2 | Bỏ câu kiểm: **2 × `201`, một dòng giỏ thành 2 đơn**, kho trừ 4. Log: request sau `DELETE` được `0/1` dòng |
 | Gửi cùng lúc 5 request huỷ một đơn 2 món | `SELECT … FOR UPDATE` (cách 3) | 1 × `200`, 4 × `409 Đơn hàng đã được hủy trước đó`. Kho `+2` | Bỏ `@Lock`: **5 × `200`, kho `+10`, `sold = -8`** |
+| Admin chuyển `SHIPPING` cùng lúc khách huỷ, 10 lượt (bước 8) | cả hai API cùng `SELECT … FOR UPDATE` một dòng `orders` | Luôn 1 × `200` + 1 × `409`; kho chỉ đổi khi phía huỷ thắng | Chỉ admin bỏ khoá: **8/10 lượt cả hai `200`**, đơn `SHIPPING` mà kho đã `+2`. Chi tiết ở `API_SPEC.md` §9.1 |
 
 Log SQL (mức `DEBUG`, có tên luồng và mốc mili-giây) cho thấy cách khoá làm việc: ở kịch bản 2, request
 sau gửi câu `update products` cùng mili-giây với request trước, nhưng câu tiếp theo của nó chỉ tới sau
 ~19 ms — chính là lúc nó đứng chờ khoá. Ở kịch bản 3, cả 5 request gửi `select … for update` cùng lúc;
 chỉ một request đi tiếp tới `update products`, 4 request kia đọc được `CANCELLED` và dừng ở `409`.
-Không có deadlock nào trong cả ba lần chạy.
+Không có deadlock nào trong mọi lần chạy.
 
 ---
 

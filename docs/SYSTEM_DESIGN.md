@@ -116,6 +116,11 @@ Ba cách, từ tệ đến tốt:
 
 Dự án học thì lưu thư mục local cũng được, nhưng biết trước giới hạn để không bất ngờ.
 
+**Trạng thái trong code v1:** đang dùng cách 2 — thư mục `BE/uploads/`, DB chỉ lưu URL
+(`API_SPEC.md` §9.4). Mọi thao tác đọc/ghi file đi qua một class duy nhất là `ImageStorageService`, phần
+phục vụ ảnh nằm ở `WebConfig`. Chuyển sang object storage thì chỉ sửa hai chỗ đó; URL ảnh cũ đã lưu
+trong DB (`users.avatar`, `products.image`, `product_images.url`) thì phải đổi bằng một câu `UPDATE`.
+
 ### 1.4. Connection pool
 
 Mỗi kết nối tới MySQL rất tốn tài nguyên để mở, nên không mở/đóng liên tục mà giữ sẵn một "hồ" kết nối
@@ -149,7 +154,7 @@ Khi hệ thống lỗi lúc 2 giờ sáng, thứ duy nhất cứu bạn là log.
 
 Vẫn deploy một app, nhưng code được chia thành các module có **ranh giới rõ ràng**.
 
-Bạn đang đi đúng hướng rồi: package hiện tại đã chia theo nghiệp vụ (`auth`, `product`, `user`) chứ không
+Bạn đang đi đúng hướng rồi: package hiện tại đã chia theo nghiệp vụ (`auth`, `user`, `category`, `product`, `cart`, `order`) chứ không
 chia theo tầng kỹ thuật (`controllers/`, `services/`, `repositories/`). Cách chia theo nghiệp vụ tốt hơn
 vì mọi thứ liên quan đến một tính năng nằm cạnh nhau, và về sau muốn tách ra thành service riêng thì
 chỉ việc bê cả thư mục đi.
@@ -162,8 +167,10 @@ Nguyên tắc để ranh giới không bị phá vỡ:
 2. **Mỗi bảng chỉ thuộc về một module.** Không để hai module cùng ghi vào một bảng.
 3. Muốn chặt chẽ hơn thì dùng công cụ như ArchUnit để viết test kiểm tra ranh giới — vi phạm là fail build.
 
-**Trạng thái trong code v1.** `CartService` đi đúng nguyên tắc 1: lấy user qua `UserService`, lấy sản
-phẩm qua `ProductService`. Hai chỗ còn lệch, đều đã biết:
+**Trạng thái trong code v1.** `CartService` và `OrderService` đi đúng nguyên tắc 1. `CartService` lấy user
+qua `UserService`, lấy sản phẩm qua `ProductService`. `OrderService` chỉ inject `OrderRepository` của chính
+nó; trừ/hoàn kho gọi `ProductService.decreaseStock()`/`increaseStock()`, đọc và xoá dòng giỏ gọi
+`CartService.getItemsForCheckout()`/`removeCheckedoutItems()`. Hai chỗ còn lệch, đều đã biết:
 
 - `CategoryService` inject thẳng `ProductRepository` để đếm sản phẩm trước khi xoá danh mục. Đổi sang gọi
   `ProductService` thì thành **phụ thuộc vòng tròn** — `ProductService` đã phụ thuộc `CategoryService` —
@@ -172,6 +179,14 @@ phẩm qua `ProductService`. Hai chỗ còn lệch, đều đã biết:
 - `AuthService` và `CustomUserDetailsService` (module `auth`) đọc/ghi thẳng bảng `users` qua
   `UserRepository` — lệch cả nguyên tắc 1 lẫn 2. Để làm cùng lúc với `UserPrincipal`, vì cả hai cùng
   đụng vào luồng đăng nhập.
+
+**Phát sự kiện thay vì gọi ngược.** Admin gỡ sản phẩm thì giỏ hàng phải dọn theo, nhưng
+`ProductService` không được gọi `CartService` vì chiều ngược lại đã có. `ProductService` chỉ phát
+`ProductDeletedEvent`; `CartService` tự đăng ký nghe bằng `@EventListener`. Mũi tên phụ thuộc chỉ còn
+`cart → product`, và module nào muốn phản ứng khi sản phẩm bị gỡ (wishlist, chỉ mục tìm kiếm…) thì thêm
+listener, không phải sửa `ProductService`. Event của Spring mặc định chạy đồng bộ, trong cùng transaction
+với bên phát — nên vẫn "được ăn cả ngã về không"; muốn tách hẳn ra (chạy sau commit, hoặc chạy bất đồng
+bộ) thì dùng `@TransactionalEventListener`, và lúc đó dọn hỏng sẽ không kéo bên phát rollback theo.
 
 Khi một module gọi service của module khác bên trong một `@Transactional`, method được gọi **tham gia
 vào transaction đang chạy** (propagation mặc định `REQUIRED`), nên đi qua service không làm mất tính
