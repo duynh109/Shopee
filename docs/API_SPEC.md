@@ -204,8 +204,9 @@ code không phân biệt được hai ca đó.
 |---|---|---|
 | `400` | `/errors/bad-request` | JSON hỏng, path variable hoặc query param sai kiểu (`?page=abc`), thiếu query param bắt buộc |
 | `401` | `/errors/invalid-credentials` | Sai email hoặc mật khẩu lúc login |
-| `401` | `/errors/token-invalid` | Token hỏng, sai chữ ký, hoặc thiếu |
+| `401` | `/errors/token-invalid` | Token hỏng, sai chữ ký (kể cả bị sửa payload), thiếu claim `role`, hoặc không gửi token |
 | `401` | `/errors/token-expired` | Token hết hạn — FE dùng để kích hoạt refresh |
+| `401` | `/errors/refresh-token-invalid` | Refresh token không dùng được (không có, hết hạn, đã thu hồi) — FE đưa về màn đăng nhập, **không** gọi refresh lại (§3.4) |
 | `403` | `/errors/forbidden` | Đã đăng nhập nhưng không đủ quyền |
 | `404` | `/errors/not-found` | Không tìm thấy tài nguyên |
 | `405` | `/errors/method-not-allowed` | Sai HTTP method |
@@ -304,8 +305,8 @@ Ba mức quyền dùng trong toàn bộ tài liệu này:
 |---|---|---|---|---|---|
 | `POST` | `/api/auth/register` | 🌐 Công khai | ✅ | `Register` | `/register` |
 | `POST` | `/api/auth/login` | 🌐 Công khai | ✅ | `Login` | `/login` |
-| `POST` | `/api/auth/logout` | 🔒 Đã đăng nhập | ✅ | `Header` ³ | mọi màn `MainLayout` |
-| `POST` | `/api/auth/refresh-token` | 🌐 Công khai ¹ | ⬜ b9 | interceptor `utils/http.ts` ⁴ | — |
+| `POST` | `/api/auth/logout` | 🌐 Công khai ¹ | ✅ | `Header` ³ | mọi màn `MainLayout` |
+| `POST` | `/api/auth/refresh-token` | 🌐 Công khai ¹ | ✅ | interceptor `utils/http.ts` ⁴ | — |
 | `GET` | `/api/users/me` | 🔒 Đã đăng nhập ² | ✅ | `Profile` *(stub)* | `/profile` |
 | `PUT` | `/api/users/me` | 🔒 Đã đăng nhập ² | ✅ | `Profile` *(stub)* | `/profile` |
 | `POST` | `/api/users/me/avatar` | 🔒 Đã đăng nhập ² | ✅ | `Profile` *(stub)* | `/profile` |
@@ -332,8 +333,8 @@ Ba mức quyền dùng trong toàn bộ tài liệu này:
 | `PUT` | `/api/admin/orders/{id}/status` | 👑 ADMIN | ✅ | chưa có màn admin ⁶ | — |
 | `GET` | `/api/admin/users` | 👑 ADMIN | ✅ | chưa có màn admin ⁶ | — |
 
-¹ Phải công khai. Nó được gọi đúng vào lúc access token đã hết hạn, nên không thể đòi access token
-hợp lệ. Nó tự xác thực bằng refresh token nằm trong body.
+¹ Phải công khai, vì được gọi đúng lúc access token đã (`refresh-token`) hoặc có thể đã (`logout`) hết hạn,
+nên không thể đòi access token hợp lệ. Cả hai tự xác thực bằng refresh token nằm trong body.
 
 ³ `components/Header/Header.tsx` là component dùng chung, có mặt trên mọi màn bọc bởi `MainLayout`
 (`/`, `/:nameId`, `/cart`, `/profile`). Nút đăng xuất nằm ở menu tài khoản của nó.
@@ -575,11 +576,14 @@ Tên, ảnh và giá là **bản sao tại thời điểm đặt hàng**, không
 ```json
 {
   "accessToken": "eyJhbGciOiJIUzI1NiJ9...",
-  "expires": 86400,
+  "expires": 900,
+  "refreshToken": "NJNfU__P8x1_fXcGkmzFRcp9ZikDy49Qg6L3K6ncbvs",
   "user": { "...": "object User ở mục 2.1" }
 }
 ```
-`expires` là số giây token còn hiệu lực. Dùng `201` vì request này tạo ra một tài nguyên mới (user).
+`expires` là số giây access token còn hiệu lực (900 = 15 phút, §3.4). `refreshToken` là chuỗi ngẫu nhiên 43 kí tự, sống 7 ngày,
+dùng để xin access token mới — xem §3.4; DB chỉ lưu bản băm của nó (`DATABASE_DESIGN.md` §3.8). Mỗi lần
+đăng ký / đăng nhập phát một refresh token riêng. Dùng `201` vì request này tạo ra một tài nguyên mới (user).
 
 **Response `422`**
 ```json
@@ -596,7 +600,7 @@ Tên, ảnh và giá là **bản sao tại thời điểm đặt hàng**, không
 2. Kiểm tra email tồn tại chưa → nếu rồi ném lỗi 422.
 3. Hash password bằng BCrypt.
 4. Lưu user với role mặc định `USER`.
-5. Sinh JWT, trả về kèm user (đã loại bỏ password).
+5. Phát access token (JWT) và refresh token, trả về kèm user (đã loại bỏ password).
 
 ### 3.2. `POST /api/auth/login`
 
@@ -624,59 +628,154 @@ Tên, ảnh và giá là **bản sao tại thời điểm đặt hàng**, không
 
 ### 3.3. `POST /api/auth/logout`
 
-**Quyền:** 🔒 **Đã đăng nhập** (USER hoặc ADMIN)
+**Quyền:** 🌐 **Công khai** — xác thực bằng chính refresh token trong body. Lúc người dùng bấm đăng xuất,
+access token có thể đã hết hạn; bắt buộc phải có nó thì FE phải đổi token trước rồi mới đăng xuất được.
+Còn ai cầm refresh token thì vốn đã dùng được nó, nên cho người đó thu hồi nó là an toàn.
 
 **Màn FE:** `components/Header/Header.tsx` (menu tài khoản) — có mặt trên mọi màn dùng `MainLayout`
 
-Cần header `Authorization`. Với JWT thuần (stateless) thì BE không thực sự huỷ được token; endpoint này
-để FE có chỗ gọi rồi tự xoá token đã lưu.
+**Request**
+```json
+{ "refreshToken": "NJNfU__P8x1_fXcGkmzFRcp9ZikDy49Qg6L3K6ncbvs" }
+```
 
-**Response `204`** — body rỗng.
+**Response `204`** — body rỗng. Refresh token đó bị thu hồi; token của các thiết bị khác không bị đụng tới.
+Access token đang cầm vẫn hợp lệ tới lúc hết hạn (tối đa 15 phút) — FE tự xoá cả hai.
 
-### 3.4. `POST /api/auth/refresh-token` *(giai đoạn sau)*
+**Luôn `204`**, kể cả khi token lạ, đã hết hạn hoặc đã thu hồi: mục đích của logout là "token này không dùng
+được nữa", và trong các trường hợp đó điều này đã đúng sẵn; trả `204` cho mọi trường hợp cũng không cho
+người dò biết token nào từng tồn tại. Thiếu `refreshToken` → `422`, không gửi body → `400`.
 
-**Quyền:** 🌐 **Công khai** — không cần token — phải công khai, vì nó được gọi đúng lúc access token đã hết hạn; xác thực bằng refresh token trong body
+Logout chạy **một câu** `UPDATE refresh_tokens SET revoked_at = ? WHERE token_hash = ? AND revoked_at IS NULL`,
+không khoá dòng và không kiểm tra gì thêm — khác hẳn việc đổi token ở §3.4. Dùng logic đổi token cho logout
+là sai: bấm đăng xuất hai lần thì lần sau gặp token "đã thu hồi", bị coi là token bị lộ và mọi thiết bị khác
+của người dùng bị đăng xuất theo.
+
+Một token đã đăng xuất mà sau đó vẫn bị đem đi **đổi** thì §3.4 coi là token bị lộ: mọi refresh token của
+user đó bị thu hồi. Đã kiểm: logout token A (thiết bị kia vẫn sống) → đem A đi đổi → `401`, và token thiết bị
+kia bị thu hồi theo.
+
+### 3.4. `POST /api/auth/refresh-token`
+
+**Quyền:** 🌐 **Công khai** — phải công khai, vì nó được gọi đúng lúc access token đã hết hạn; xác thực bằng
+refresh token trong body. Header `Authorization` có gửi kèm (kể cả token rác) cũng bị bỏ qua.
 
 **Màn FE:** Không màn nào gọi trực tiếp; interceptor `FE/src/utils/http.ts` tự gọi rồi retry request gốc
+— xem §12.1.
 
-Khi làm refresh token, `/login` và `/register` trả thêm `refreshToken`, và lỗi token hết hạn có dạng:
-
+**Request**
 ```json
-{
-  "type": "/errors/token-expired",
-  "title": "Token hết hạn",
-  "status": 401
-}
+{ "refreshToken": "NJNfU__P8x1_fXcGkmzFRcp9ZikDy49Qg6L3K6ncbvs" }
 ```
-FE dựa vào `type === '/errors/token-expired'` để tự động gọi refresh rồi retry request.
 
-#### Chốt kèm bước này: đưa `role` vào payload access token
+**Response `200`** — cùng hình dạng với `/login`: `{ accessToken, expires, refreshToken, user }`.
+`refreshToken` trong response là token **mới**; token vừa gửi lên bị thu hồi ngay (xoay vòng — *rotation*),
+nên FE phải lưu đè token mới sau mỗi lần đổi.
 
-**Quyết định: chuyển `role` vào trong JWT, nhưng chỉ khi làm refresh token —
-không làm sớm hơn.**
+**Các lỗi**
 
-Hiện tại payload chỉ có `sub` (email), `iat`, `exp`. `JwtAuthenticationFilter` phải gọi
-`CustomUserDetailsService` để truy vấn `users` lấy `role` ở **mỗi request**. Đo trên máy local:
-query đó tốn **~0.83 ms/request** (3.85 ms có query so với 3.01 ms không query, mỗi bản 5 lần đo,
-hai dải không giao nhau).
+| Tình huống | Status | `type` / `title` |
+|---|---|---|
+| `refreshToken` thiếu hoặc toàn dấu cách | `422` | `errors.refreshToken = "Thiếu refresh token"` |
+| Không gửi body | `400` | `/errors/bad-request` |
+| Không tồn tại, đã hết hạn, hoặc đã bị thu hồi | `401` | `/errors/refresh-token-invalid`, `Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.` |
 
-Vì sao chưa làm ngay: nhét `role` vào token biến token thành **bản cache của quyền hạn**, và
-`jwt.expiration-seconds` hiện là **86400** (24 giờ). Nghĩa là cách chức một admin hoặc khoá một tài
-khoản sẽ **không có hiệu lực trong tối đa 24 giờ**. Với thiết kế hiện tại, sửa `role` trong DB có
-hiệu lực ngay lập tức ở request kế tiếp.
+Ba trường hợp `401` trùng cả `type` lẫn `title`: FE xử lý như nhau (đưa về màn đăng nhập), và người dò
+không biết được token nào từng tồn tại. `type` **khác** `/errors/token-expired` là có chủ đích: FE gặp
+`token-expired` thì tự gọi refresh — nếu refresh hỏng cũng trả `token-expired`, FE sẽ gọi refresh mãi
+không dừng.
 
-Vì sao làm được khi có refresh token: access token lúc đó rút xuống **5–15 phút** và mang sẵn
-`role` (không hỏi DB), còn refresh token sống dài và **có** kiểm tra DB mỗi lần làm mới. Cửa sổ sai
-lệch quyền hạn co từ 24 giờ xuống còn TTL của access token. Ba thứ — `role` trong token, TTL ngắn,
-refresh token — ràng buộc nhau, phải làm cùng lúc.
+**Phát hiện token bị dùng lại.** Token đã thu hồi vẫn nằm trong bảng `refresh_tokens` cho tới khi quá hạn
+(xem "Dọn token quá hạn" bên dưới). Nếu một token
+**đã đổi rồi** lại được gửi lên, nghĩa là có hai người cùng cầm nó — token đã lọt ra ngoài. BE thu hồi
+**mọi** refresh token còn sống của user đó (mọi thiết bị) rồi mới trả `401`. Chủ thật đăng nhập lại bằng
+mật khẩu, kẻ gian thì không làm được. Ai đưa token lên sau — chủ thật hay kẻ gian — cũng làm lộ chuyện, nên
+kẻ gian giữ được quyền truy cập nhiều nhất tới lần đổi token kế tiếp. Token chỉ **hết hạn** thì trả `401`,
+không thu hồi hết.
 
-Khi làm, cần sửa: `JwtService.generateToken()` thêm claim `role`; `JwtAuthenticationFilter` dựng
-`UserDetails` thẳng từ claim thay vì gọi `CustomUserDetailsService`; hạ `jwt.expiration-seconds`.
+Đo với một user đăng nhập trên 2 thiết bị: đổi T1 → `200`, nhận T2; T1 bị thu hồi, T2 và token của thiết bị
+kia vẫn sống. Gửi lại T1 → `401`, đồng thời T2 lẫn token thiết bị kia bị thu hồi; đổi T2 → `401`; đăng nhập
+lại bằng mật khẩu thì bình thường.
 
-> **Việc nên làm trước, rẻ hơn và không đánh đổi gì:** `GET /api/users/me` hiện chạy **hai câu
-> SELECT giống hệt nhau** — một từ filter, một từ `UserService`. Viết một `UserPrincipal` bọc thẳng
-> entity `User` là xoá được câu thứ hai, lợi ích tương đương mà không hề động tới khả năng thu hồi
-> quyền.
+**Logic** — một transaction ở `AuthService.refresh`:
+
+1. `RefreshTokenRepository.findByTokenHashForUpdate(sha256(token))` — `@Lock(PESSIMISTIC_WRITE)` +
+   `JOIN FETCH rt.user`, Hibernate sinh `… for update of rt1_0`. Không thấy → `401`.
+2. Đã thu hồi → `revokeAllActiveByUserId` (một câu `UPDATE`) → `401`.
+3. Hết hạn → `401`.
+4. Thu hồi token này, phát cặp token mới bằng `buildAuthResponse` — dùng chung với login.
+
+Một lần đổi token chạy **3 câu SQL**: `select … for update` (kèm user), `insert` token mới, `update` thu hồi
+token cũ (ghi lúc commit). Không có câu `select users` nào vì user đã nạp kèm ở câu đầu.
+
+**Ba chỗ dễ sai** — đã đo bằng cách sửa tạm cho sai rồi khôi phục:
+
+| Chỗ | Code đúng | Làm sai thì |
+|---|---|---|
+| `@Transactional(noRollbackFor = InvalidRefreshTokenException.class)` trên `AuthService.refresh` | Gửi lại T1 → `401`, T2 bị thu hồi | Bỏ `noRollbackFor`: vẫn `401`, nhưng exception làm transaction rollback — câu thu hồi hết bị huỷ theo. **T2 vẫn sống, kẻ gian cầm T2 đổi tiếp được (`200`)** |
+| `RefreshTokenService.consume()` **không** gắn `@Transactional`, chạy nhờ transaction của người gọi | như trên | Gắn thêm `@Transactional` (kể cả mặc định `REQUIRED`): exception đi qua proxy của `consume` làm cả transaction bị đánh dấu "chỉ được rollback", `noRollbackFor` ở ngoài không cứu được → **`500 UnexpectedRollbackException`**, T2 vẫn sống, kẻ gian đổi được (`200`) |
+| `@Lock` trên câu tìm token | 2 request đổi cùng một token cùng lúc ×10 → luôn 1×`200` + 1×`401`; 5 request ×3 → luôn 1×`200` + 4×`401` | Bỏ `@Lock`: **10/10 lượt cả hai cùng `200`** — một token đẻ ra hai token con, việc phát hiện dùng lại bị qua mặt |
+
+Hệ quả của khoá: với request đến sau, "hai request đổi cùng lúc" trông y hệt kẻ gian dùng lại token, nên mọi
+token của user bị thu hồi và người dùng bị đăng xuất. Vì vậy FE **chỉ được gửi một request refresh tại một
+thời điểm** — xem §12.1.
+
+#### Access token mang sẵn `role`, filter không hỏi DB
+
+Payload của access token: `{"sub":"an@gmail.com","role":"USER","iat":…,"exp":…}`. `JwtAuthenticationFilter`
+gọi `JwtService.parse()` rồi dựng `UserDetails` thẳng từ `sub` và `role` — **không** truy vấn bảng `users`.
+Payload ai cũng đọc được (chỉ là Base64) nhưng không sửa được: đã thử đổi `USER` thành `ADMIN` rồi giữ chữ
+ký cũ → `401 /errors/token-invalid`. Token không có claim `role` cũng bị coi là hỏng → `401 token-invalid`.
+
+Mỗi request đã đăng nhập bớt đúng một câu `SELECT users` (đo trước và sau khi chuyển `role` vào token):
+
+| Request | Trước | Sau |
+|---|---|---|
+| `GET /api/users/me` | 2 câu — cả hai là `SELECT users` | 1 |
+| `GET /api/cart` | 3 | 2 |
+| `GET /api/admin/orders` | 4 | 3 |
+| `GET /api/products/{id}` kèm token | 3 | 2 |
+
+Câu `SELECT users` còn lại ở `/users/me`, `/cart`, `/orders` là của service: nó cần `id` của người gọi,
+còn token chỉ mang email.
+
+**Cái giá: `role` trong token là bản chụp lúc phát.** Đổi role trong DB chỉ có hiệu lực khi access token hết
+hạn và được đổi mới — lúc đổi, refresh token nạp kèm user từ DB nên token mới luôn mang role mới nhất. Vì
+vậy access token chỉ sống **15 phút** (`jwt.expiration-seconds=900`): quyền cũ tồn tại tối đa chừng đó. Đã
+kiểm: nâng user lên `ADMIN` trong DB → token đang cầm vẫn bị `403` ở API admin, đổi token xong thì `200`; hạ
+về `USER` → token đang cầm **vẫn `200`** cho tới khi đổi token, sau đó `403`.
+
+**Không có bean `UserDetailsService`.** App không dùng cơ chế đăng nhập username/password của Spring
+Security, nên không khai bean đó. Khi thiếu nó, Spring Boot (`UserDetailsServiceAutoConfiguration`) tự tạo
+một user ảo và in `Using generated security password: …` ra log — `ShopeeApplication` exclude cấu hình
+này. Đã kiểm: bỏ `exclude` thì dòng log đó xuất hiện.
+
+#### Dọn token quá hạn
+
+Mỗi lần đăng nhập và mỗi lần đổi token đều thêm một bản ghi vào `refresh_tokens`; bản ghi cũ chỉ bị đánh
+dấu thu hồi chứ không xoá. Người dùng hoạt động liên tục 8 tiếng là đổi token khoảng 32 lần.
+`RefreshTokenService.purgeExpired()` chạy theo lịch — `@Scheduled`, cron đọc từ `jwt.refresh-purge-cron`,
+mặc định `0 0 3 * * *` tức 3h sáng giờ Việt Nam (`zone = "Asia/Ho_Chi_Minh"`, để giờ chạy không đổi theo múi
+giờ của máy chủ) — và xoá hẳn các bản ghi **đã quá `expires_at`** bằng một câu
+`delete … from refresh_tokens where expires_at < ?` (JPQL `@Modifying`, không nạp entity nào lên).
+
+| Bản ghi | Job có xoá không | Vì sao |
+|---|---|---|
+| Đã thu hồi, **còn** hạn | Không | Còn nó thì mới phát hiện được token bị dùng lại (ở trên) |
+| **Quá hạn**, đã thu hồi hay chưa | Có | Đem đi đổi thì đằng nào cũng `401`. Xoá rồi thì chỉ mất báo động dùng lại cho một token vốn đã vô dụng |
+
+Đã kiểm với lịch 5 giây/lần (đặt qua biến môi trường, không sửa file): một lần chạy xoá đúng 11 bản ghi quá
+hạn, log `Đã xoá 11 refresh token đã quá hạn` ở luồng `scheduling-1` chứ không phải luồng request; số bản ghi
+"thu hồi còn hạn" và "còn dùng được" giữ nguyên; token thu hồi còn hạn đem đi đổi vẫn làm mọi token của user
+bị thu hồi. Lần chạy không xoá gì thì không in log. Với lịch mặc định, khởi động app không kích hoạt job.
+
+| Chỗ | Làm sai thì — đã đo |
+|---|---|
+| `@EnableScheduling` ở `config/SchedulingConfig` | Bỏ đi: Spring lờ mọi `@Scheduled`. Không lỗi, không cảnh báo, không câu `DELETE` nào chạy — bảng cứ phình mà không ai biết |
+| `@Transactional` trên `purgeExpired` | Bỏ đi: job chạy ở luồng riêng nên không có transaction sẵn, câu `DELETE` bị từ chối (`TransactionRequiredException`). Mỗi lần chạy chỉ để lại một dòng `ERROR … Unexpected error occurred in scheduled task`, app vẫn phục vụ request bình thường |
+
+Chạy nhiều server thì server nào cũng chạy job — vô hại, lần chạy sau chỉ xoá 0 bản ghi
+(`SYSTEM_DESIGN.md` §3.1). Câu xoá quét cả bảng vì `expires_at` không có index — xem `DATABASE_DESIGN.md` §3.8.
 
 ---
 
@@ -723,8 +822,12 @@ Cập nhật profile. Tất cả field đều optional — gửi field nào cậ
   `field: null` đều đến BE dưới dạng `null`, nên v1 không phân biệt được hai ca đó. Hệ quả: không có
   cách nào xoá `name`/`phone`/`address` về `null` qua API. Màn `Profile` không có thao tác nào cần
   việc đó nên chấp nhận được; muốn làm đúng thì phải dùng `JsonNullable` cho từng field.
-- **Đổi mật khẩu không thu hồi được token cũ.** JWT là stateless: token cấp trước đó vẫn hợp lệ cho
-  tới khi hết hạn (24 giờ). Xử lý triệt để cần refresh token hoặc danh sách chặn — bước 9.
+- **Đổi mật khẩu thu hồi mọi refresh token của user** — mọi thiết bị, kể cả thiết bị đang dùng, không đổi
+  được token nữa (người ta thường đổi mật khẩu vì nghi bị lộ). Access token đang cầm vẫn hợp lệ tới lúc hết
+  hạn (tối đa 15 phút); FE nên đăng nhập lại ngay bằng mật khẩu mới để có cặp token mới. `UserService` chỉ phát
+  `PasswordChangedEvent`; module `auth` nghe và thu hồi, trong cùng transaction — đã kiểm: cho bên nghe ném
+  lỗi thì `PUT` trả `500` và mật khẩu **không** bị đổi. Sai mật khẩu hiện tại (`422`) hoặc chỉ sửa tên thì
+  không thu hồi gì.
 
 **Response `200`** — user sau khi cập nhật.
 
@@ -863,7 +966,7 @@ sản phẩm nằm trong 4 giỏ:
 | | Kết quả |
 |---|---|
 | `DELETE` → `204` | 4 dòng giỏ của sản phẩm → 0; dòng giỏ của sản phẩm khác còn nguyên; `deleted_at` được ghi |
-| SQL | 4 câu: `select users` (filter JWT), `select products`, `delete ci1_0 from cart_items ci1_0 where ci1_0.product_id=?`, `update products` |
+| SQL | 3 câu: `select products`, `delete ci1_0 from cart_items ci1_0 where ci1_0.product_id=?`, `update products` |
 | Gỡ lại lần nữa, hoặc id không tồn tại | `404`, không có câu `delete` nào |
 | Đơn cũ có sản phẩm đó | vẫn đọc được, snapshot giữ nguyên |
 
@@ -1263,8 +1366,8 @@ propagation 'mandatory'` và kho không bị đụng tới.
 **Đã kiểm khi chạy song song** (`DATABASE_DESIGN.md` §5): 20 người mua cùng lúc 5 món cuối → đúng 5
 đơn; một user gửi cùng lúc 2 request đặt cùng một dòng giỏ → đúng 1 đơn, request kia `409`.
 
-**Số câu SQL** cho một đơn 2 món: **10** — 2 `SELECT users` (một ở filter JWT, một ở service — nợ
-`UserPrincipal`), 1 `SELECT` giỏ kèm product, 2 `UPDATE products`, 1 `SELECT` kiểm mã đơn trùng,
+**Số câu SQL** cho một đơn 2 món: **9** — 1 `SELECT users` (service cần `id` của người gọi), 1 `SELECT` giỏ
+kèm product, 2 `UPDATE products`, 1 `SELECT` kiểm mã đơn trùng,
 1 `INSERT orders`, 2 `INSERT order_items`, 1 `DELETE cart_items`. Không có câu nào nạp lại product
 khi dựng response.
 
@@ -1308,8 +1411,8 @@ bằng **một** câu `WHERE order_id IN (...)`. Đo được:
 
 | Trang | Câu SQL |
 |---|---|
-| Trang 1, 10 đơn | 5 — 2 `SELECT users` (nợ `UserPrincipal`), 1 `COUNT`, 1 lấy đơn (`LIMIT`), 1 lấy dòng hàng |
-| Trang 2, 2 đơn (trang cuối) | 4 — **không có `COUNT`**: trang trả về ít dòng hơn `limit` nên Spring Data tự suy ra tổng số = `offset + số dòng`, khỏi đếm |
+| Trang 1, 10 đơn | 4 — 1 `SELECT users`, 1 `COUNT`, 1 lấy đơn (`LIMIT`), 1 lấy dòng hàng |
+| Trang 2, 2 đơn (trang cuối) | 3 — **không có `COUNT`**: trang trả về ít dòng hơn `limit` nên Spring Data tự suy ra tổng số = `offset + số dòng`, khỏi đếm |
 
 `limit` tối đa 50 cho khớp `@BatchSize(50)`: một trang luôn nằm gọn trong một lần nạp. Câu `IN` luôn có
 đủ 50 dấu `?` kể cả khi trang chỉ có 10 đơn — Hibernate đệm cho đủ để mọi trang dùng chung một câu
@@ -1517,9 +1620,8 @@ mặc định và mức chặn `limit ≤ 50`, cùng thứ tự `created_at DESC
 `PagedResponse` kèm `items`. Khác duy nhất: **không** lọc theo `user_id`. Đã kiểm: `totalItems` khớp
 `COUNT(*)` của bảng `orders`, 10 đơn đầu đúng là 10 đơn mới nhất, `?status=CANCELLED` khớp số đơn huỷ.
 
-**4 câu SQL mỗi trang:** 1 `SELECT users` (filter JWT nạp người gọi), 1 lấy đơn (`LIMIT`), 1 `COUNT`,
-1 lấy dòng hàng (`@BatchSize`). Ít hơn §8.2 một câu `SELECT users`: danh sách admin không cần `id`
-của người gọi, nên service không phải tra user theo email lần nữa.
+**3 câu SQL mỗi trang:** 1 lấy đơn (`LIMIT`), 1 `COUNT`, 1 lấy dòng hàng (`@BatchSize`). Ít hơn §8.2 một
+câu `SELECT users`: danh sách admin không cần `id` của người gọi, nên không tra user nào.
 
 Câu lấy đơn dùng index `idx_order_created`, đo bằng `EXPLAIN` ở `DATABASE_DESIGN.md` §3.6.
 
@@ -1537,7 +1639,7 @@ Nhận qua record `UserQuery`, cùng luật với `OrderQuery`. Thứ tự: đă
 không có field đó, nên hash không thể lọt ra dù entity `User` có. Đã kiểm trên JSON thật: không có
 chuỗi `password`, cũng không có tiền tố BCrypt `$2a$`.
 
-3 câu SQL mỗi trang: 1 `SELECT users` của filter JWT, 1 lấy trang, 1 `COUNT`. Bảng `users` không có
+2 câu SQL mỗi trang: 1 lấy trang, 1 `COUNT`. Bảng `users` không có
 index `created_at` nên MySQL sắp xếp cả bảng (`EXPLAIN`: `ALL`, `Using filesort`). Với v1 thì chấp nhận
 được; khi số user lớn thì thêm index như `idx_order_created`.
 
@@ -1629,10 +1731,11 @@ nữa) vẫn nằm lại trên đĩa, chưa có việc dọn. Cũng chưa giới
 | Hình dạng lỗi | ✅ `ProblemDetail` (RFC 9457), phủ cả lỗi trong filter | — |
 | Đường dẫn | ✅ `/api/*` đã đúng prefix | — |
 | `id` dạng string | ✅ Mọi DTO response, kể cả `OrderResponse` và `productId` trong `OrderItemResponse` | — |
-| Response register | ✅ Trả `{accessToken, expires, user}` | — |
+| Response register | ✅ Trả `{accessToken, expires, refreshToken, user}` | — |
 | Validation | ✅ Body của Auth, User, Category, Product, Cart, Order, đổi trạng thái đơn của admin qua `@Valid`; luật chéo giữa hai field (huỷ phải có lý do) ở service. Query param của `GET /api/products`, `GET /api/orders`, `GET /api/admin/orders`, `GET /api/admin/users` nhận qua record + `@ModelAttribute`; `sortBy` kiểm ở `ProductQuery.validate()`; sai kiểu → `400` (§1.6) | — |
 | CORS | ✅ Đã bật cho `localhost:3000` | — |
 | JWT filter | ✅ `JwtAuthenticationFilter` (`OncePerRequestFilter`) | — |
+| Refresh token | ✅ Phát khi login/register, đổi token có xoay vòng + phát hiện dùng lại (§3.4), logout thu hồi (§3.3), đổi mật khẩu thu hồi mọi token (§4.2), access token mang `role` và sống 15 phút, filter không hỏi DB, job hằng ngày xoá token quá hạn (§3.4) | — |
 | Bảo vệ endpoint | ✅ Phân quyền theo nhóm + `STATELESS` | Thêm rule khi có endpoint mới |
 | JWT secret | ⚠️ Đã ra `application.properties` | Chuyển sang biến môi trường trước khi public repo |
 | Entity Product | ✅ Đủ field theo `DATABASE_DESIGN` §3.3, `price` là `Long`, soft delete, album ảnh | — |
@@ -1661,11 +1764,12 @@ nữa) vẫn nằm lại trên đĩa, chưa có việc dọn. Cũng chưa giới
 | **6** ✅ | Cart | Ràng buộc `UNIQUE`, logic cộng dồn, quyền sở hữu theo bản ghi, `JOIN FETCH` |
 | **7** ✅ | Order: đặt hàng + huỷ đơn | `@Transactional`, snapshot, race condition tồn kho |
 | **8** ✅ | Admin + upload ảnh: đổi trạng thái đơn, danh sách đơn/user cho admin, upload ảnh, dọn giỏ khi gỡ sản phẩm | `@PreAuthorize`, `MultipartFile`, máy trạng thái, Spring event |
-| **9** | *(Tuỳ chọn)* Refresh token + đưa `role` vào payload token, hạ TTL — xem §3.4 | Token lifecycle |
+| **9** ✅ | Refresh token + đưa `role` vào payload token, hạ TTL, tự dọn token quá hạn — xem §3.4 | Token lifecycle, `SecureRandom`, rollback rule (`noRollbackFor`), `@Scheduled` |
 
-Sau bước 7 là đã đủ để FE chạy hoàn chỉnh với BE này. Sau bước 8, cả 28/29 endpoint ở §1.10 đã có; chỉ còn
-`refresh-token` của bước 9 (tuỳ chọn). Hồi quy cuối bước 8 (2026-10-04): 144/144 ca đạt — 98 ca phủ bước 3–8
-kể cả 3 kịch bản chạy song song, 32 ca upload, 14 ca dọn giỏ — log không có lỗi `500` nào.
+Sau bước 7 là đã đủ để FE chạy hoàn chỉnh với BE này. Sau bước 9, cả 29/29 endpoint ở §1.10 đã có. Hồi quy
+cuối (2026-10-07): 226/226 ca đạt — 101 ca phủ bước 3–9 kể cả 3 kịch bản chạy song song, 32 ca upload, 14 ca
+dọn giỏ, 79 ca riêng cho refresh token (phát, đổi kể cả đổi song song, thu hồi, `role` trong access token, job
+dọn token) — log không có dòng `ERROR` nào.
 
 ---
 
@@ -1682,6 +1786,18 @@ FE hiện tại được viết theo một contract API cũ. Để dùng BE này
 - config.headers.Authorization = this.access_token
 + config.headers.Authorization = `Bearer ${this.access_token}`
 ```
+
+**Refresh token (§3.4).** Interceptor xử lý `401` theo `type`:
+
+- `/errors/token-expired` → gọi `POST auth/refresh-token`, lưu đè **cả** `accessToken` lẫn `refreshToken`
+  mới, rồi gửi lại request gốc.
+- `/errors/refresh-token-invalid` hoặc `/errors/token-invalid` → xoá token đã lưu, về màn đăng nhập.
+- Đăng xuất gửi `{ refreshToken }` trong body của `POST auth/logout` (không cần header `Authorization`).
+- Đổi mật khẩu thành công thì mọi refresh token cũ bị thu hồi (§4.2) → gọi lại `auth/login` bằng mật khẩu
+  mới để lấy cặp token mới.
+- **Chỉ một request refresh tại một thời điểm**: nhiều request cùng nhận `token-expired` thì cùng chờ một
+  promise refresh dùng chung. Gửi song song hai lần với cùng một refresh token thì lần sau bị BE coi là
+  token bị dùng lại và người dùng bị đăng xuất.
 
 Ngoài ra, interceptor đang so sánh `url === path.login` để biết khi nào lưu token — mà `path.login`
 đồng thời là route của React Router. Khi API đổi thành `auth/login`, hai thứ này tách đôi → cần hằng số

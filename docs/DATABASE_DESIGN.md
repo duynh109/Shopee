@@ -11,7 +11,7 @@
 
 | Phiên bản | Gồm gì |
 |---|---|
-| **v1 — làm ngay** | 7 bảng: `users`, `categories`, `products`, `product_images`, `cart_items`, `orders`, `order_items` |
+| **v1 — làm ngay** | 8 bảng: `users`, `categories`, `products`, `product_images`, `cart_items`, `orders`, `order_items`, `refresh_tokens` |
 | **v2 — nâng cấp** | `addresses`, `product_variants`, `reviews`, `vouchers` |
 | **v3 — mô hình sàn** | `shops`, `payments`, `shipments`, `inventory_logs`, `notifications` |
 
@@ -43,15 +43,15 @@
     │ 1            │ 1
     │ n            │ n
 ┌───▼────────────┐ │        ┌──────────────────────┐
-│   cart_items   │ │        │        users         │
-├────────────────┤ │        ├──────────────────────┤
-│ id (PK)        │ │   1:n  │ id (PK)              │
-│ user_id (FK)   │◄┼────────┤ email (UNIQUE)       │
-│ product_id (FK)│ │        │ password, name       │
-│ quantity       │ │        │ phone, address       │
-│                │ │        │ avatar, role         │
-│ UNIQUE(user_id,│ │        └──────────┬───────────┘
-│       product) │ │                   │ 1
+│   cart_items   │ │        │        users         │        ┌──────────────────┐
+├────────────────┤ │        ├──────────────────────┤        │  refresh_tokens  │
+│ id (PK)        │ │   1:n  │ id (PK)              │  1:n   ├──────────────────┤
+│ user_id (FK)   │◄┼────────┤ email (UNIQUE)       ├───────►│ id (PK)          │
+│ product_id (FK)│ │        │ password, name       │        │ user_id (FK)     │
+│ quantity       │ │        │ phone, address       │        │ token_hash UNIQUE│
+│                │ │        │ avatar, role         │        │ expires_at       │
+│ UNIQUE(user_id,│ │        └──────────┬───────────┘        │ revoked_at       │
+│       product) │ │                   │ 1                  └──────────────────┘
 └────────────────┘ │                   │ n
                    │        ┌──────────▼───────────┐
                    │        │        orders        │
@@ -481,6 +481,63 @@ ngoại, nên `order_items` đã có sẵn index trên `order_id` và trên `pro
 Không lưu thành tiền từng dòng vì tính được ngay (`price × quantity`) và kết quả không đổi theo thời gian.
 Chỉ lưu sẵn những giá trị mà việc tính lại sau này sẽ cho ra kết quả **khác đi**.
 
+### 3.8. `refresh_tokens` — phiên đăng nhập
+
+```sql
+CREATE TABLE refresh_tokens (
+    id         BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id    BIGINT      NOT NULL,
+    token_hash VARCHAR(64) NOT NULL,
+    expires_at DATETIME    NOT NULL,
+    revoked_at DATETIME        NULL,
+    created_at DATETIME    NOT NULL,
+
+    CONSTRAINT uq_refresh_token_hash UNIQUE (token_hash),
+    CONSTRAINT fk_refresh_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+```
+
+Mỗi lần đăng nhập hoặc đăng ký sinh **một** bản ghi: mỗi thiết bị là một phiên riêng, đăng xuất máy này
+không làm máy kia bị đăng xuất theo.
+
+| Cột | Ý nghĩa |
+|---|---|
+| `token_hash` | SHA-256 của refresh token, viết hex (64 kí tự). Chuỗi gốc chỉ client giữ — DB bị lộ (file backup, SQL injection) thì kẻ gian cũng chỉ có bản băm, không đổi được ra access token. `UNIQUE` vì mọi lần tra đều tra theo cột này |
+| `expires_at` | 7 ngày sau lúc phát (`jwt.refresh-expiration-seconds`) |
+| `revoked_at` | `NULL` = còn dùng được. Thu hồi thì ghi thời điểm vào đây chứ **không xoá bản ghi**: còn bản ghi thì mới nhận ra một token đã đổi rồi mà vẫn bị gửi lại — dấu hiệu token bị lộ (`API_SPEC.md` §3.4). Bản ghi chỉ bị xoá khi đã quá `expires_at` (bên dưới) |
+
+**Chuỗi gốc là 32 byte ngẫu nhiên, không phải JWT.** Lấy từ `SecureRandom` (độ ngẫu nhiên của hệ điều
+hành; `java.util.Random` thì đoán được số tiếp theo), đổi sang Base64url không padding → 43 kí tự
+`A–Z a–z 0–9 - _`. Điểm mạnh của JWT là kiểm được mà không cần DB, nhưng refresh token **phải** tra DB mới
+thu hồi được — dùng JWT ở đây không được lợi gì, chỉ dài hơn và để lộ nội dung.
+
+**Băm bằng SHA-256, không dùng BCrypt như mật khẩu.** Đo bằng cùng một token:
+
+| | BCrypt (cost 10) | SHA-256 |
+|---|---|---|
+| Băm 2 lần cùng một chuỗi | 2 kết quả **khác nhau** (mỗi lần trộn một salt ngẫu nhiên) | 2 kết quả **giống hệt** |
+| Thời gian một lần băm | ~133 ms | ~0,001 ms |
+
+BCrypt cố ý chậm vì mật khẩu do người đặt nên đoán được (`123456`…), mỗi lần thử phải tốn thời gian. Token
+256 bit ngẫu nhiên thì không có gì để đoán, nên băm nhanh là đủ. Và vì salt làm kết quả đổi mỗi lần, với
+BCrypt không thể viết `WHERE token_hash = ?` — mà đó lại là cách duy nhất để tìm một refresh token.
+
+Đã kiểm: dump toàn bộ DB không chứa chuỗi gốc của token nào, chỉ có bản băm.
+
+**Dọn bản ghi quá hạn — và vì sao `expires_at` chưa có index.** Mỗi ngày lúc 3h sáng, một job xoá các bản
+ghi có `expires_at < now` (`API_SPEC.md` §3.4). Cột này không có index nên câu xoá quét cả bảng (`EXPLAIN`:
+`type: ALL`), và trong lúc quét InnoDB khoá mọi dòng nó đi qua — kể cả khi không xoá dòng nào. Đo bằng cách
+giữ câu xoá đó trong một transaction chưa commit:
+
+| | `EXPLAIN` câu xoá | Đăng nhập (cần `INSERT` vào bảng này) trong lúc đó |
+|---|---|---|
+| Không index | `type: ALL`, đọc cả bảng | **Phải chờ** tới khi transaction kết thúc (3,5 giây) |
+| Có `INDEX (expires_at)` | `type: range`, chỉ đọc dòng quá hạn | Không chờ (0,1 giây) |
+
+Trong job thật, transaction chỉ kéo dài bằng thời gian câu `DELETE` — với vài nghìn bản ghi là vài mili giây,
+lại chạy lúc 3h sáng — nên chưa thêm index: index nào cũng làm mỗi lần `INSERT`/`DELETE` tốn thêm một chút.
+Bảng lên tới hàng triệu bản ghi thì thêm `INDEX (expires_at)` và xoá từng lô nhỏ.
+
 ---
 
 ## 4. Sáu nguyên tắc thiết kế DB cho ecommerce
@@ -832,7 +889,7 @@ Liệt kê để biết mình đang đứng ở đâu so với hệ thống th�
 
 ## 9. Chốt lại cho v1
 
-Bảy bảng ở mục 3, tuân thủ sáu nguyên tắc ở mục 4, xử lý tồn kho theo cách 1 ở mục 5, và luồng đặt hàng
+Tám bảng ở mục 3, tuân thủ sáu nguyên tắc ở mục 4, xử lý tồn kho theo cách 1 ở mục 5, và luồng đặt hàng
 theo đúng thứ tự ở mục 6.
 
 Về cách tạo schema: hiện đang dùng `spring.jpa.hibernate.ddl-auto=update` — tiện lúc học vì Hibernate tự

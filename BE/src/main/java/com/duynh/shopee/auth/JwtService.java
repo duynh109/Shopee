@@ -10,10 +10,12 @@ import org.springframework.stereotype.Service;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.MalformedJwtException;
 import io.jsonwebtoken.security.Keys;
 
 @Service
 public class JwtService {
+    private static final String ROLE_CLAIM = "role";
 
     private final SecretKey secretKey;
     private final long expirationSeconds;
@@ -24,9 +26,10 @@ public class JwtService {
         this.expirationSeconds = expirationSeconds;
     }
 
-    public String generateToken(String email) {
+    public String generateToken(String email, String role) {
         return Jwts.builder()
                 .subject(email)
+                .claim(ROLE_CLAIM, role)
                 .issuedAt(new Date())
                 .expiration(new Date(System.currentTimeMillis() + expirationSeconds * 1000))
                 .signWith(secretKey)
@@ -37,8 +40,13 @@ public class JwtService {
         return expirationSeconds;
     }
 
-    public String extractEmail(String token) {
-        return parseClaims(token).getSubject();
+    public AccessTokenClaims parse(String token) {
+        Claims claims = parseClaims(token);
+        String role = claims.get(ROLE_CLAIM, String.class);
+        if (role == null) {
+            throw new MalformedJwtException("Token thiếu claim role");
+        }
+        return new AccessTokenClaims(claims.getSubject(), role);
     }
 
     private Claims parseClaims(String token) {

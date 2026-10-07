@@ -49,7 +49,9 @@ public class SecurityConfig {
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .authorizeHttpRequests(auth -> auth
                         // ---- Công khai: không cần đăng nhập ----
-                        .requestMatchers(HttpMethod.POST, "/api/auth/register", "/api/auth/login").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/auth/register", "/api/auth/login",
+                                "/api/auth/refresh-token", "/api/auth/logout")
+                        .permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/products/**", "/api/categories/**").permitAll()
                         // Ảnh được nạp bằng <img src>, thẻ đó không gửi được header Authorization
                         .requestMatchers(HttpMethod.GET, "/images/**").permitAll()

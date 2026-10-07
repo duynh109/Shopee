@@ -4,8 +4,8 @@ import java.io.IOException;
 
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -20,19 +20,16 @@ import jakarta.servlet.http.HttpServletResponse;
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     /**
-     * Nơi filter ghi lại lý do token bị từ chối, để JwtAuthenticationEntryPoint đọc
-     * lại.
+     * Nơi filter ghi lại lý do token bị từ chối, để JwtAuthenticationEntryPoint đọc lại.
      */
     public static final String TOKEN_ERROR_ATTRIBUTE = "tokenError";
 
     private static final String BEARER_PREFIX = "Bearer ";
 
     private final JwtService jwtService;
-    private final CustomUserDetailsService customUserDetailsService;
 
-    public JwtAuthenticationFilter(JwtService jwtService, CustomUserDetailsService customUserDetailsService) {
+    public JwtAuthenticationFilter(JwtService jwtService) {
         this.jwtService = jwtService;
-        this.customUserDetailsService = customUserDetailsService;
     }
 
     @Override
@@ -44,10 +41,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         if (token != null) {
             try {
-                authenticate(jwtService.extractEmail(token));
+                authenticate(jwtService.parse(token));
             } catch (ExpiredJwtException ex) {
                 request.setAttribute(TOKEN_ERROR_ATTRIBUTE, TokenError.EXPIRED);
-            } catch (JwtException | IllegalArgumentException | UsernameNotFoundException ex) {
+            } catch (JwtException | IllegalArgumentException ex) {
                 request.setAttribute(TOKEN_ERROR_ATTRIBUTE, TokenError.INVALID);
             }
         }
@@ -66,9 +63,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         return header.substring(BEARER_PREFIX.length());
     }
 
-    private void authenticate(String email) {
-        UserDetails userDetails = customUserDetailsService.loadUserByUsername(email);
-
+    private void authenticate(AccessTokenClaims claims) {
+        UserDetails userDetails = User
+                .withUsername(claims.email())
+                .password("")
+                .authorities("ROLE_" + claims.role())
+                .build();
         UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
                 userDetails, null, userDetails.getAuthorities());
 

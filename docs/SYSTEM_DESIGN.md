@@ -176,9 +176,9 @@ nó; trừ/hoàn kho gọi `ProductService.decreaseStock()`/`increaseStock()`, �
   `ProductService` thì thành **phụ thuộc vòng tròn** — `ProductService` đã phụ thuộc `CategoryService` —
   và với constructor injection, Spring không dựng được bean nào trước nên app không khởi động. Muốn gỡ
   thì phải đổi cấu trúc (ví dụ phát sự kiện "sắp xoá danh mục"), chưa đáng làm ở v1.
-- `AuthService` và `CustomUserDetailsService` (module `auth`) đọc/ghi thẳng bảng `users` qua
-  `UserRepository` — lệch cả nguyên tắc 1 lẫn 2. Để làm cùng lúc với `UserPrincipal`, vì cả hai cùng
-  đụng vào luồng đăng nhập.
+- `AuthService` (module `auth`) đọc/ghi thẳng bảng `users` qua `UserRepository` — tìm user khi đăng nhập,
+  tạo user khi đăng ký — lệch cả nguyên tắc 1 lẫn 2. Filter JWT thì không còn đụng tới `users`: nó đọc email
+  và `role` thẳng từ access token.
 
 **Phát sự kiện thay vì gọi ngược.** Admin gỡ sản phẩm thì giỏ hàng phải dọn theo, nhưng
 `ProductService` không được gọi `CartService` vì chiều ngược lại đã có. `ProductService` chỉ phát
@@ -187,6 +187,11 @@ nó; trừ/hoàn kho gọi `ProductService.decreaseStock()`/`increaseStock()`, �
 listener, không phải sửa `ProductService`. Event của Spring mặc định chạy đồng bộ, trong cùng transaction
 với bên phát — nên vẫn "được ăn cả ngã về không"; muốn tách hẳn ra (chạy sau commit, hoặc chạy bất đồng
 bộ) thì dùng `@TransactionalEventListener`, và lúc đó dọn hỏng sẽ không kéo bên phát rollback theo.
+
+Cùng cách đó giữa `user` và `auth`: đổi mật khẩu thì mọi refresh token phải bị thu hồi. Ở đây không có vòng
+tròn bean (`RefreshTokenService` không phụ thuộc `UserService`), nhưng module `auth` đã dựa vào `user`
+(`RefreshToken` trỏ tới `User`); để `UserService` gọi thẳng vào `auth` thì hai module dính nhau hai chiều.
+`UserService` chỉ phát `PasswordChangedEvent`, `RefreshTokenService` nghe — phụ thuộc vẫn một chiều `auth → user`.
 
 Khi một module gọi service của module khác bên trong một `@Transactional`, method được gọi **tham gia
 vào transaction đang chạy** (propagation mặc định `REQUIRED`), nên đi qua service không làm mất tính
@@ -230,6 +235,11 @@ của server thì phải cấu hình "dính" người dùng vào một server, h
 
 Hệ quả: **không lưu bất cứ trạng thái nào trong RAM hoặc trên đĩa của app** — kể cả file ảnh upload
 (xem 1.3) hay bộ đếm.
+
+Việc chạy theo lịch cũng nhân lên theo số server: job dọn refresh token hết hạn (`@Scheduled`, 3h sáng)
+chạy trên **mọi** instance cùng lúc. Với job này thì vô hại — câu `DELETE … WHERE expires_at < ?` chạy lần
+thứ hai chỉ xoá 0 dòng. Job nào chạy hai lần là sai (gửi mail tổng kết, đối soát tiền) thì phải để các
+instance giành một khoá chung trong DB trước khi chạy (thư viện ShedLock), hoặc tách job ra một worker riêng.
 
 ### 3.2. Read replica
 

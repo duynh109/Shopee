@@ -11,7 +11,7 @@ FE/     React + TypeScript + Vite — port 3000
 | File | Nội dung |
 |---|---|
 | `docs/API_SPEC.md` | Contract API giữa BE và FE. **§1.10 là bảng quyền chính thức**: cả 29 endpoint, ai gọi được, đã làm chưa, và **màn FE nào gọi tới** kèm route của màn đó. §11 là lộ trình 9 bước. |
-| `docs/DATABASE_DESIGN.md` | Schema v1 (7 bảng) và lý do đằng sau từng quyết định |
+| `docs/DATABASE_DESIGN.md` | Schema v1 (8 bảng) và lý do đằng sau từng quyết định |
 | `docs/SYSTEM_DESIGN.md` | Lộ trình mở rộng, chưa cần cho v1 |
 
 ## Đang làm tới đâu

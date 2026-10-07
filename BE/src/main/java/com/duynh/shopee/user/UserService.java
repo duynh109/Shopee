@@ -4,6 +4,7 @@ import com.duynh.shopee.common.PagedResponse;
 import com.duynh.shopee.exception.FieldValidationException;
 import com.duynh.shopee.exception.NotFoundException;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -16,10 +17,13 @@ import org.springframework.transaction.annotation.Transactional;
 public class UserService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final ApplicationEventPublisher eventPublisher;
 
-    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder) {
+    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder,
+            ApplicationEventPublisher eventPublisher) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional(readOnly = true)
@@ -72,6 +76,7 @@ public class UserService {
             throw new FieldValidationException("password", "Mật khẩu không đúng");
         }
         user.setPassword(passwordEncoder.encode(newPassword));
+        eventPublisher.publishEvent(new PasswordChangedEvent(user.getId()));
     }
 
     /**

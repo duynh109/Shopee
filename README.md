@@ -14,7 +14,7 @@ và **không** bám theo contract cũ đó. Bước tích hợp sẽ sửa front
 
 | | Trạng thái |
 |---|---|
-| **Backend** | Xong 8/9 bước của lộ trình (bước 9 là tuỳ chọn). Hiện có: đăng ký, đăng nhập, đăng xuất bằng JWT; phân quyền USER/ADMIN theo từng nhóm endpoint; xử lý lỗi theo RFC 9457; hồ sơ cá nhân; danh mục; sản phẩm có phân trang, lọc, sắp xếp, album ảnh, xoá mềm; giỏ hàng; đặt hàng, xem đơn và huỷ đơn; admin xem mọi đơn, đổi trạng thái đơn theo máy trạng thái, xem danh sách người dùng; upload ảnh sản phẩm và avatar; gỡ sản phẩm thì tự dọn khỏi giỏ hàng của mọi người. Còn lại: refresh token (bước 9, tuỳ chọn) |
+| **Backend** | Xong 9/9 bước của lộ trình, đủ 29/29 endpoint. Hiện có: đăng ký, đăng nhập, đăng xuất bằng JWT kèm refresh token (xoay vòng, phát hiện token bị lộ, tự dọn token quá hạn); phân quyền USER/ADMIN theo từng nhóm endpoint; xử lý lỗi theo RFC 9457; hồ sơ cá nhân; danh mục; sản phẩm có phân trang, lọc, sắp xếp, album ảnh, xoá mềm; giỏ hàng; đặt hàng, xem đơn và huỷ đơn; admin xem mọi đơn, đổi trạng thái đơn theo máy trạng thái, xem danh sách người dùng; upload ảnh sản phẩm và avatar; gỡ sản phẩm thì tự dọn khỏi giỏ hàng của mọi người |
 | **Frontend** | Xong phần danh sách sản phẩm, chi tiết sản phẩm, tìm kiếm, lọc, phân trang, đăng nhập/đăng ký. Giỏ hàng và trang cá nhân còn là stub. Vẫn đang gọi contract API cũ, chưa trỏ sang backend này |
 | **Tích hợp** | Chưa bắt đầu — danh sách việc cần sửa ở `docs/API_SPEC.md` mục 12 |
 
@@ -41,7 +41,7 @@ Toàn bộ thiết kế nằm trong `docs/`, viết trước khi code và cập 
 | File | Nội dung |
 |---|---|
 | [`docs/API_SPEC.md`](docs/API_SPEC.md) | Contract API giữa hai nửa. Mục **1.10** là bảng tổng hợp cả 29 endpoint: ai gọi được (công khai / đã đăng nhập / ADMIN), đã làm chưa, và màn frontend nào gọi tới kèm route của màn đó |
-| [`docs/DATABASE_DESIGN.md`](docs/DATABASE_DESIGN.md) | Schema 7 bảng, kèm lý do đằng sau từng quyết định (vì sao giỏ hàng không lưu giá, vì sao đơn hàng phải snapshot, vì sao chưa làm biến thể sản phẩm) |
+| [`docs/DATABASE_DESIGN.md`](docs/DATABASE_DESIGN.md) | Schema 8 bảng, kèm lý do đằng sau từng quyết định (vì sao giỏ hàng không lưu giá, vì sao đơn hàng phải snapshot, vì sao chưa làm biến thể sản phẩm) |
 | [`docs/SYSTEM_DESIGN.md`](docs/SYSTEM_DESIGN.md) | Lộ trình mở rộng khi lượng truy cập tăng — chưa cần cho phiên bản hiện tại |
 
 Vài quyết định thiết kế đáng chú ý ở backend:
@@ -61,6 +61,10 @@ Vài quyết định thiết kế đáng chú ý ở backend:
 - **Tồn kho đúng cả khi nhiều người mua cùng lúc.** Kiểm tra và trừ kho nằm trong cùng một câu `UPDATE`
   có điều kiện; bấm "Đặt hàng" hai lần không tạo ra hai đơn; huỷ đơn khoá dòng để kho không bị hoàn hai
   lần. Đã thử bằng request gửi song song: 20 người cùng mua 5 món cuối → đúng 5 đơn, 15 người nhận `409`.
+- **Refresh token xoay vòng và tự phát hiện token bị lộ.** Access token chỉ sống 15 phút; mỗi lần đổi
+  token thì token cũ bị thu hồi và cấp token mới. Một token đã đổi rồi mà vẫn bị gửi lên nghĩa là có hai
+  người cùng cầm nó, nên mọi phiên đăng nhập của người đó bị thu hồi. Database chỉ lưu bản băm SHA-256 của
+  refresh token, không lưu chuỗi gốc.
 
 ## Chạy thử
 
@@ -111,7 +115,7 @@ Chạy ở `http://localhost:3000` — origin này đã được cấu hình COR
 | ✅ | 6. Giỏ hàng | |
 | ✅ | 7. Đơn hàng: đặt, xem và huỷ | |
 | ✅ | 8. Nhóm API admin + upload ảnh | |
-| ⬜ | 9. Refresh token *(tuỳ chọn)* | |
+| ✅ | 9. Refresh token | |
 
 Chi tiết từng bước ở `docs/API_SPEC.md` mục 11.
 
@@ -130,5 +134,6 @@ Liệt kê thẳng để khỏi phải đọc code mới biết:
   giỏ, tạo danh mục trùng tên) thì request thua nhận `500` thay vì `409`. Dữ liệu vẫn đúng — ràng buộc ở
   database đã chặn — chỉ có status code sai
 - Secret và mật khẩu database còn nằm trong `application.properties`, cần chuyển sang biến môi trường
-- Token chưa thu hồi được: đăng xuất chỉ xoá token ở phía client, token cũ vẫn hợp lệ cho tới khi hết
-  hạn (24 giờ). Cần refresh token hoặc danh sách chặn — bước 9
+- Access token không thu hồi được: đăng xuất và đổi mật khẩu thu hồi refresh token ngay, nhưng access
+  token đang cầm vẫn dùng được tới khi hết hạn (tối đa 15 phút); đổi role trong database cũng cần tối đa
+  chừng đó mới có hiệu lực
