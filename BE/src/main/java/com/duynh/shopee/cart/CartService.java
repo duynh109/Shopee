@@ -47,7 +47,7 @@ public class CartService {
         long total = (long) item.getQuantity() + request.quantity();
         validateStock(product, total);
         item.addQuantity(request.quantity());
-        return CartItemResponse.from(cartItemRepository.save(item));
+        return CartItemResponse.from(cartItemRepository.saveAndFlush(item));
     }
 
     // PUT /api/cart/items/{id}

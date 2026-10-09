@@ -4,8 +4,10 @@ import java.net.URI;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.hibernate.exception.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
@@ -26,6 +28,17 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 public class GlobalExceptionHandler {
 
     private static final Logger logger = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ProblemDetail handleDataIntegrityViolation(DataIntegrityViolationException ex) {
+        if (ex.getCause() instanceof ConstraintViolationException cve
+                && cve.getKind() == ConstraintViolationException.ConstraintKind.UNIQUE) {
+            logger.warn("Hai request cùng lúc trùng ràng buộc UNIQUE {} → trả 409", cve.getConstraintName());
+            return problem(HttpStatus.CONFLICT, "/errors/conflict",
+                    "Thao tác bị trùng với một yêu cầu khác vừa xảy ra, vui lòng thử lại");
+        }
+        return handleGenericException(ex);
+    }
 
     @ExceptionHandler(NotFoundException.class)
     public ProblemDetail handleNotFound(NotFoundException ex) {

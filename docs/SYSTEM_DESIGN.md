@@ -11,7 +11,7 @@
 ## Bản đồ tổng quát
 
 ```
-Level 0  Monolith                    ← ĐANG Ở ĐÂY
+Level 0  Monolith                    ← v1 ĐANG Ở ĐÂY (kèm vài món của Level 1 và 2)
          1 app + 1 DB
 
 Level 1  Monolith tối ưu             ← đích đến thực tế của dự án này
@@ -62,7 +62,7 @@ cao nhất** — làm tốt Level 1 thường nhanh hơn Level 3 làm ẩu.
 
 ### 1.1. Vấn đề N+1 query — bệnh kinh điển của JPA
 
-Sẽ gặp ngay ở bước 5 của lộ trình (làm API danh sách sản phẩm). Code trông vô hại:
+Gặp ngay ở API đầu tiên trả danh sách có quan hệ — danh sách sản phẩm kèm danh mục. Code trông vô hại:
 
 ```java
 List<Product> products = productRepository.findAll();   // 1 câu query
@@ -75,12 +75,18 @@ for (Product p : products) {
 Lấy 20 sản phẩm → **41 câu query** thay vì 1. Với 100 sản phẩm là 201 câu. App vẫn chạy đúng, chỉ là chậm
 dần đều cho đến lúc không chịu nổi — nên rất khó phát hiện nếu không chủ động tìm.
 
-Cách phát hiện: bật `spring.jpa.show-sql=true` (bạn đã bật sẵn) rồi đếm số câu SQL in ra khi gọi một API.
+Cách phát hiện: bật `spring.jpa.show-sql=true` (dự án đã bật sẵn) rồi đếm số câu SQL in ra khi gọi một API.
 
-Cách xử lý:
-- `JOIN FETCH` trong JPQL: `SELECT p FROM Product p JOIN FETCH p.category`
-- `@EntityGraph` trên method của repository
-- Với quan hệ `@OneToMany` thì dùng `@BatchSize` để gom N query thành vài query
+Cách xử lý — dự án dùng cả ba, mỗi cách ở chỗ hợp với nó:
+- `JOIN FETCH` trong JPQL: `SELECT p FROM Product p JOIN FETCH p.category` — giỏ hàng, vì cần **INNER**
+  join để dòng trỏ tới sản phẩm đã gỡ tự rơi ra (`API_SPEC.md` §7.6)
+- `@EntityGraph` trên method của repository — danh sách và chi tiết sản phẩm, chi tiết một đơn
+  (`API_SPEC.md` §6.4)
+- Với quan hệ `@OneToMany` thì dùng `@BatchSize` để gom N query thành vài query — dòng hàng của danh sách
+  đơn có phân trang (`API_SPEC.md` §8.2)
+
+Đã đo trước khi chữa: 5 sản phẩm thuộc 4 danh mục tốn 5 câu SQL, giỏ 4 món tốn 8 câu. Sau khi chữa, mỗi
+API đọc chỉ còn 1–4 câu bất kể bao nhiêu dòng (số đo ở `API_SPEC.md` §3.4 và `API_SPEC.md` §8.2).
 
 > Nguyên tắc phòng bệnh: đặt tất cả quan hệ là `FetchType.LAZY` (mặc định của `@OneToMany`, nhưng
 > `@ManyToOne` mặc định là `EAGER` — nhớ đổi), rồi chủ động fetch những gì cần ở từng truy vấn.
@@ -128,7 +134,8 @@ Mỗi kết nối tới MySQL rất tốn tài nguyên để mở, nên không m
 
 Điều cần biết: pool mặc định 10 kết nối. Nếu có API nào giữ kết nối quá lâu (query chậm, hoặc gọi API
 bên ngoài **bên trong** một transaction) thì pool cạn, toàn bộ hệ thống đứng hình dù CPU vẫn nhàn rỗi.
-→ Quy tắc: **không gọi API bên ngoài bên trong transaction**.
+→ Quy tắc: **không gọi API bên ngoài bên trong transaction**. Cùng lý do, dự án tắt
+`spring.jpa.open-in-view`: bật thì mỗi request giữ một kết nối tới tận lúc ghi xong JSON (`API_SPEC.md` §6.4).
 
 ### 1.5. Idempotency — chống bấm nút hai lần
 
@@ -154,8 +161,8 @@ Khi hệ thống lỗi lúc 2 giờ sáng, thứ duy nhất cứu bạn là log.
 
 Vẫn deploy một app, nhưng code được chia thành các module có **ranh giới rõ ràng**.
 
-Bạn đang đi đúng hướng rồi: package hiện tại đã chia theo nghiệp vụ (`auth`, `user`, `category`, `product`, `cart`, `order`) chứ không
-chia theo tầng kỹ thuật (`controllers/`, `services/`, `repositories/`). Cách chia theo nghiệp vụ tốt hơn
+Package của dự án chia theo nghiệp vụ (`auth`, `user`, `category`, `product`, `cart`, `order`, `storage`) chứ
+không chia theo tầng kỹ thuật (`controllers/`, `services/`, `repositories/`). Cách chia theo nghiệp vụ tốt hơn
 vì mọi thứ liên quan đến một tính năng nằm cạnh nhau, và về sau muốn tách ra thành service riêng thì
 chỉ việc bê cả thư mục đi.
 
@@ -234,7 +241,8 @@ nên request của cùng một người có thể rơi vào App #1 hay App #3 đ
 của server thì phải cấu hình "dính" người dùng vào một server, hoặc đẩy session ra Redis.
 
 Hệ quả: **không lưu bất cứ trạng thái nào trong RAM hoặc trên đĩa của app** — kể cả file ảnh upload
-(xem 1.3) hay bộ đếm.
+(xem 1.3) hay bộ đếm. Refresh token là trạng thái, nhưng nằm trong bảng `refresh_tokens` của DB dùng chung
+chứ không nằm trong RAM của app, nên app vẫn stateless: đổi token ở App #1 rồi gọi API ở App #3 vẫn đúng.
 
 Việc chạy theo lịch cũng nhân lên theo số server: job dọn refresh token hết hạn (`@Scheduled`, 3h sáng)
 chạy trên **mọi** instance cùng lúc. Với job này thì vô hại — câu `DELETE … WHERE expires_at < ?` chạy lần
@@ -363,12 +371,15 @@ kèm Kubernetes, và Kubernetes tự nó đã là một thứ cần học riêng
 
 ---
 
-## Đề xuất cho dự án này
+## Dự án đang ở đâu, bước tiếp theo là gì
 
-1. **Bây giờ:** làm xong Level 0 cho đúng — đủ 5 bảng, API chạy, bảo mật hoạt động.
-2. **Ngay sau đó:** nhặt vài món ở Level 1 có giá trị học cao nhất — sửa N+1 query, đánh index đúng chỗ,
-   xử lý race condition tồn kho. Ba thứ này gặp trong mọi dự án Java đi làm.
-3. **Khi muốn học tiếp:** thêm Redis cache và Flyway migration — hai công cụ gần như chắc chắn gặp khi đi làm.
+1. **Level 0 cho đúng — xong ở v1:** 8 bảng, 29 endpoint, phân quyền hai tầng, JWT kèm refresh token xoay
+   vòng, lỗi theo RFC 9457.
+2. **Mấy món Level 1 có giá trị học cao nhất — xong ở v1:** chữa N+1 (1.1), index đặt theo số đo `EXPLAIN`
+   chứ không theo cảm tính (`DATABASE_DESIGN.md` §3.6), race condition tồn kho và huỷ đơn đã thử bằng
+   request song song (`DATABASE_DESIGN.md` §5). Ảnh vẫn lưu trên đĩa (1.3) — đủ cho một server.
+3. **Tiếp theo:** test tự động (hiện mỗi bước được kiểm bằng script gọi API thật, chưa nằm trong repo), Flyway
+   migration, rồi Redis cache — ba thứ gần như chắc chắn gặp khi đi làm.
 4. **Level 3 trở lên:** chỉ đụng đến khi muốn học có chủ đích, không phải vì dự án cần.
 
 Giá trị thật của tài liệu này không nằm ở việc làm hết, mà ở chỗ khi phỏng vấn hay khi gặp vấn đề thật,

@@ -118,7 +118,8 @@ Tách rời như vậy còn mang lại hai lợi ích:
    hay không.
 2. **Giỏ hàng không phải nguồn duy nhất.** Nút "Mua ngay" ở trang chi tiết sản phẩm đặt hàng thẳng, không
    qua giỏ. Nếu `orders` bị buộc chặt vào `cart_items` thì luồng này không làm được, hoặc phải tạo dòng
-   giỏ hàng giả rồi xoá ngay.
+   giỏ hàng giả rồi xoá ngay. (v1 chưa có nút này — `POST /api/orders` nhận `cartItemIds` — nhưng schema
+   không chặn đường thêm nó.)
 
 Ví von: giỏ hàng như cái rổ nhựa trong siêu thị, đơn hàng như tờ hoá đơn in ở quầy. Hàng chuyển từ rổ sang
 hoá đơn, rồi rổ được trả về chỗ cũ. Tờ hoá đơn không có dòng nào ghi "hàng này lấy từ rổ số 7" — tự nó
@@ -127,6 +128,21 @@ hoá đơn, rồi rổ được trả về chỗ cũ. Tờ hoá đơn không có
 ---
 
 ## 3. Chi tiết từng bảng
+
+> **SQL trong mục này là bản thiết kế; schema thật do Hibernate sinh từ entity** (`ddl-auto=update`,
+> mục 9). Đã đối chiếu cả 8 bảng với `information_schema` của MySQL: cột, kiểu, `NULL`/`NOT NULL`,
+> `UNIQUE`, khoá ngoại và `CHECK` đều khớp, trừ ba khác biệt về hình thức:
+>
+> - Cột thời gian là `DATETIME(6)` (tới micro-giây), không phải `DATETIME`.
+> - Không có `DEFAULT` nào ở tầng DB. Giá trị ban đầu (`role = 'USER'`, `sold = 0`, `payment_status =
+>   'UNPAID'`…) do code gán lúc tạo entity.
+> - Tên ràng buộc và index do Hibernate tự đặt (`UK6dotkott2…`, `FK1lih5y2…`), trừ chỗ entity đặt tên
+>   tường minh: `uq_cart_item`, `idx_order_user_status`, `idx_order_created`. Các tên `fk_…`/`uq_…` khác
+>   trong SQL dưới đây chỉ để dễ đọc. Đặt tên tường minh cho mọi ràng buộc nên làm cùng lúc chuyển sang
+>   Flyway — `ddl-auto=update` không đổi tên ràng buộc đã có.
+>
+> Khác biệt về **hành vi** thì chỉ có một, ghi ngay tại bảng đó: khoá ngoại `product_images.product_id`
+> không có `ON DELETE CASCADE` (§3.4).
 
 ### 3.1. `users`
 
@@ -216,6 +232,7 @@ CREATE TABLE products (
 
 | Cột | Ghi chú |
 |---|---|
+| `description` | `TEXT` chứa tối đa **65.535 byte** — có giới hạn, chỉ là lớn. `ProductRequest` chặn ở `@Size(max = 10000)`. `@Size` đếm bằng `String.length()` của Java: kí tự có dấu như `ệ` tính 1 (3 byte UTF-8), emoji tính 2 (4 byte), nên 10.000 đơn vị tối đa 30.000 byte, luôn vừa cột. Đã đo: không có `@Size` thì mô tả 65.538 byte → MySQL `Data too long` → `500`; có thì `422`, còn 10.000 kí tự có dấu hay 5.000 emoji đều `201` |
 | `price` | **`BIGINT`, đơn vị VND**, không dùng `DOUBLE`/`FLOAT` — xem mục 4.4 |
 | `quantity` | Tồn kho. Trừ tại thời điểm **đặt hàng**, không phải lúc thêm vào giỏ. Xem mục 5 |
 | `sold`, `view`, `rating` | **Cố tình phi chuẩn hoá** — xem mục 4.2 |
@@ -251,6 +268,16 @@ CREATE TABLE product_images (
     INDEX idx_image_product (product_id)
 );
 ```
+
+**Khoá ngoại thật không có `ON DELETE CASCADE`** như SQL trên: `ProductImage.product` không mang
+`@OnDelete`, nên Hibernate sinh khoá ngoại thường. Không ảnh hưởng gì — sản phẩm chỉ bị xoá mềm nên dòng
+`products` không bao giờ bị `DELETE`, còn ảnh bị gỡ khỏi album thì `orphanRemoval` xoá từng dòng
+(`API_SPEC.md` §5.4). Index trên `product_id` là index MySQL tự tạo kèm khoá ngoại, không phải
+`idx_image_product` khai riêng.
+
+`url` dài tối đa 255 kí tự, nên mỗi phần tử `images[]` trong `ProductRequest` mang
+`@Size(max = 255)` ngay trong dấu `< >`, cạnh `@NotBlank`, để kiểm **từng** URL. Thiếu nó thì URL dài
+đi thẳng xuống MySQL → `Data too long` → `500`; có nó thì `422 errors.images[i]`.
 
 Vì sao phải tách bảng riêng thay vì nhét mảng URL vào một cột? Quy tắc chuẩn hoá cơ bản: **một ô không
 chứa nhiều giá trị**. Nhét `"url1,url2,url3"` vào một cột `VARCHAR` sẽ khiến bạn không thể sắp xếp,
@@ -294,11 +321,6 @@ sớm cho người dùng, nhưng tồn kho chỉ thực sự bị trừ khi đ�
 liệu tạm. Ngược lại, khoá ngoại từ `orders` tới `users` **không** cascade: đơn hàng là dữ liệu giao dịch,
 phải giữ lại.
 
-**`product_id` thì cascade cũng vô ích.** Sản phẩm chỉ bị xoá mềm, dòng `products` không bao giờ bị
-`DELETE`, nên `ON DELETE CASCADE` không bao giờ chạy. Việc dọn nằm ở code: gỡ sản phẩm thì
-`ProductDeletedEvent` kéo theo một câu `DELETE FROM cart_items WHERE product_id = ?` trong cùng transaction
-(`API_SPEC.md` §5.3).
-
 JPA thuần **không** sinh được mệnh đề này — `@JoinColumn` chỉ tạo một `FOREIGN KEY` trơn, và xoá user sẽ
 bị MySQL chặn vì còn dòng giỏ hàng tham chiếu. Phải dùng annotation riêng của Hibernate:
 
@@ -317,11 +339,13 @@ nó đã được `uq_cart_item (user_id, product_id)` phục vụ: index tổng
 theo **tiền tố trái** của nó — `(user_id)` và `(user_id, product_id)`, nhưng không phải `(product_id)`
 một mình. Thêm `INDEX idx_cart_user (user_id)` nữa chỉ tốn chỗ và làm chậm mọi lệnh ghi.
 
-**Khoá ngoại `product_id` không cascade, và đó là một cái bẫy.** `products` dùng xoá mềm, nên dòng sản
-phẩm không bao giờ bị `DELETE` thật — `ON DELETE CASCADE` ở đây sẽ không bao giờ kích hoạt. Nhưng
-`@SQLRestriction("deleted_at IS NULL")` khiến Hibernate coi sản phẩm đó như không tồn tại, trong khi
-`cart_items.product_id` vẫn trỏ tới nó. Nạp dòng giỏ hàng ấy qua `@ManyToOne(optional = false)` sẽ ném
-`EntityNotFoundException`. Cách xử lý và lý do chọn nó nằm ở [`API_SPEC.md` §7.6](API_SPEC.md).
+**Khoá ngoại `product_id` không cascade — có cascade cũng vô ích, và đó là một cái bẫy.** `products` dùng
+xoá mềm, nên dòng sản phẩm không bao giờ bị `DELETE` thật — `ON DELETE CASCADE` ở đây sẽ không bao giờ kích
+hoạt. Nhưng `@SQLRestriction("deleted_at IS NULL")` khiến Hibernate coi sản phẩm đó như không tồn tại, trong
+khi `cart_items.product_id` vẫn trỏ tới nó; nạp dòng giỏ hàng ấy qua `@ManyToOne(optional = false)` sẽ ném
+`EntityNotFoundException`. Vì vậy việc dọn nằm ở code: gỡ sản phẩm thì `ProductDeletedEvent` kéo theo một câu
+`DELETE FROM cart_items WHERE product_id = ?` trong cùng transaction (`API_SPEC.md` §5.3), và câu đọc giỏ
+dùng `JOIN FETCH` để dòng nào lọt lưới cũng tự rơi khỏi kết quả ([`API_SPEC.md` §7.6](API_SPEC.md)).
 
 ### 3.6. `orders` — đơn hàng
 
@@ -371,10 +395,10 @@ lọc `user_id`, nhưng **không** dùng được cho truy vấn chỉ lọc `st
 
 Index này **không tốn thêm gì**: khoá ngoại `user_id` đằng nào cũng cần một index có `user_id` đứng
 đầu, và MySQL dùng luôn `(user_id, status)` cho việc đó thay vì tự tạo thêm index `(user_id)` — đã
-kiểm bằng `information_schema.STATISTICS`, bảng `orders` chỉ có `PRIMARY`, `UNIQUE(order_code)` và
-`idx_order_user_status`.
+kiểm bằng `information_schema.STATISTICS`, bảng `orders` chỉ có `PRIMARY`, `UNIQUE(order_code)`,
+`idx_order_user_status` và `idx_order_created` (ngay dưới), không có index `(user_id)` nào khác.
 
-**`idx_order_created (created_at)`** tạo ở bước 8, khai trong `@Table(indexes = ...)` của `Order`. Câu duy
+**`idx_order_created (created_at)`** khai trong `@Table(indexes = ...)` của `Order`. Câu duy
 nhất cần nó là admin xem mọi đơn (`API_SPEC.md` §9.2): `ORDER BY created_at DESC, id DESC LIMIT ?` mà
 không có `WHERE`. Đo bằng `EXPLAIN`:
 
@@ -588,8 +612,8 @@ Mọi truy vấn hiển thị đều thêm điều kiện `WHERE deleted_at IS N
 Nhờ có snapshot ở `order_items`, đơn hàng cũ vẫn hiển thị đầy đủ tên và giá sản phẩm kể cả khi sản phẩm
 đã bị gỡ bán — hai nguyên tắc này bổ trợ cho nhau.
 
-> Trong JPA có thể dùng `@SQLRestriction("deleted_at IS NULL")` trên entity để Hibernate tự thêm điều kiện,
-> khỏi phải nhớ viết tay ở từng câu query.
+> Entity `Product` mang `@SQLRestriction("deleted_at IS NULL")`, nên Hibernate tự thêm điều kiện đó vào mọi
+> câu JPQL/Criteria của nó — không phải nhớ viết tay ở từng câu query.
 
 **Cái bẫy kèm theo:** `@SQLRestriction` áp cho **mọi** câu query của entity, kể cả những câu hỏi
 không nên bị lọc. Ví dụ "danh mục này còn sản phẩm không?" — dùng để chặn xoá danh mục — phải đếm cả
@@ -618,9 +642,14 @@ Riêng `order_items` chỉ cần `created_at` vì nó không bao giờ bị sử
 Tầng code kiểm tra là để báo lỗi thân thiện cho người dùng. Tầng DB ràng buộc là để **đảm bảo dữ liệu
 không bao giờ sai**, kể cả khi có bug, có race condition, hay khi ai đó sửa tay bằng SQL.
 
-Cụ thể trong schema này: `UNIQUE` trên `users.email` và `orders.order_code`, `UNIQUE(user_id, product_id)`
-trên `cart_items`, `CHECK` trên ba cột enum của `orders` (mục 3.6), `NOT NULL` trên mọi cột bắt buộc,
-và `FOREIGN KEY` giữa các bảng.
+Cụ thể trong schema này: `UNIQUE` trên `users.email`, `categories.name` và `orders.order_code`,
+`UNIQUE(user_id, product_id)` trên `cart_items`, `CHECK` trên ba cột enum của `orders` (mục 3.6),
+`NOT NULL` trên mọi cột bắt buộc, và `FOREIGN KEY` giữa các bảng.
+
+Với `UNIQUE`, câu kiểm tra ở tầng code ("email này có chưa?") chỉ chặn được request đến **sau**. Hai
+request đến **cùng lúc** đều nghe "chưa", đều `INSERT`, và DB chỉ cho một cái qua. Request bị từ chối nhận
+`409` "thử lại" — không phải `500`, vì không có gì hỏng: lần thử lại sẽ gặp câu kiểm tra và nhận lỗi rõ
+ràng như bình thường. Cách phân biệt "trùng UNIQUE" với các vi phạm khác (vẫn là `500`) ở `API_SPEC.md` §1.6.
 
 > Một dấu hiệu nhận biết thiết kế tốt: **ràng buộc viết ra rất tự nhiên**. Nếu thấy mình phải bịa ra thủ
 > thuật vòng vo để né một ràng buộc lẽ ra đơn giản, thường là do đang nhét hai khái niệm khác nhau vào
@@ -704,8 +733,8 @@ nếu khoá nhiều dòng theo thứ tự khác nhau.
 gọn trong một câu `UPDATE` (cách 1), còn khoá bi quan trên `products` sẽ bắt mọi đơn cùng mua một món
 phải xếp hàng suốt cả transaction đặt hàng.
 
-> **Khuyến nghị:** dùng **cách 1**. Khi làm xong API đặt hàng, viết thử một test gọi đồng thời 10 request
-> mua cùng lúc để tự thấy hiện tượng bán vượt kho nếu làm sai — đây là bài học đáng giá nhất về concurrency.
+> **Chọn gì ở đâu:** tồn kho dùng **cách 1**; huỷ đơn và đổi trạng thái đơn dùng **cách 3**. Bảng đo ngay
+> dưới cho thấy mỗi chỗ làm sai thì hỏng thế nào — đó là bài học đáng giá nhất về concurrency của dự án.
 
 ### Đã đo: bắn request song song vào code thật
 
@@ -717,9 +746,9 @@ chạy hai lần: với code thật, rồi với bản **tạm làm sai** (sửa
 | 20 người, mỗi người mua 1 món, kho còn **5** | `UPDATE … WHERE quantity >= ?` (cách 1) | 5 × `201`, 15 × `409`. Kho `0`, `sold 5` | Đổi thành đọc → kiểm bằng Java → ghi đè: **20 × `201`, bán vượt 15 món**, kho vẫn báo còn `3`, `sold 20` |
 | Một user gửi cùng lúc 2 request đặt đúng một dòng giỏ | đếm số dòng `DELETE` ở bước 7 (mục 6) | 1 × `201`, 1 × `409 Giỏ hàng vừa thay đổi`. 1 đơn, kho trừ 2 | Bỏ câu kiểm: **2 × `201`, một dòng giỏ thành 2 đơn**, kho trừ 4. Log: request sau `DELETE` được `0/1` dòng |
 | Gửi cùng lúc 5 request huỷ một đơn 2 món | `SELECT … FOR UPDATE` (cách 3) | 1 × `200`, 4 × `409 Đơn hàng đã được hủy trước đó`. Kho `+2` | Bỏ `@Lock`: **5 × `200`, kho `+10`, `sold = -8`** |
-| Admin chuyển `SHIPPING` cùng lúc khách huỷ, 10 lượt (bước 8) | cả hai API cùng `SELECT … FOR UPDATE` một dòng `orders` | Luôn 1 × `200` + 1 × `409`; kho chỉ đổi khi phía huỷ thắng | Chỉ admin bỏ khoá: **8/10 lượt cả hai `200`**, đơn `SHIPPING` mà kho đã `+2`. Chi tiết ở `API_SPEC.md` §9.1 |
+| Admin chuyển `SHIPPING` cùng lúc khách huỷ, 10 lượt | cả hai API cùng `SELECT … FOR UPDATE` một dòng `orders` | Luôn 1 × `200` + 1 × `409`; kho chỉ đổi khi phía huỷ thắng | Chỉ admin bỏ khoá: **8/10 lượt cả hai `200`**, đơn `SHIPPING` mà kho đã `+2`. Chi tiết ở `API_SPEC.md` §9.1 |
 
-Log SQL (mức `DEBUG`, có tên luồng và mốc mili-giây) cho thấy cách khoá làm việc: ở kịch bản 2, request
+Bật log SQL mức `DEBUG` (có tên luồng và mốc mili-giây) trong lúc đo cho thấy cách khoá làm việc: ở kịch bản 2, request
 sau gửi câu `update products` cùng mili-giây với request trước, nhưng câu tiếp theo của nó chỉ tới sau
 ~19 ms — chính là lúc nó đứng chờ khoá. Ở kịch bản 3, cả 5 request gửi `select … for update` cùng lúc;
 chỉ một request đi tiếp tới `update products`, 4 request kia đọc được `CANCELLED` và dừng ở `409`.
@@ -763,7 +792,8 @@ sau nó: bước 7 phải là thao tác DB cuối cùng; response dựng từ c�
 
 **Sinh `order_code`:** `"SP"` + ngày **theo giờ Việt Nam** (`yyyyMMdd`) + 6 chữ số ngẫu nhiên có đệm 0,
 ví dụ `SP20260927004817` — luôn đúng 16 kí tự. Sinh xong kiểm `existsByOrderCode`, trùng thì sinh lại;
-hai request cùng sinh ra một mã trong khoảnh khắc giữa lúc kiểm và lúc `INSERT` thì `UNIQUE` ở DB chặn.
+hai request cùng sinh ra một mã trong khoảnh khắc giữa lúc kiểm và lúc `INSERT` thì `UNIQUE` ở DB chặn, request
+sau nhận `409` "thử lại" (`API_SPEC.md` §1.6).
 Hai cách bị loại:
 
 | Cách | Vì sao không dùng |
@@ -892,8 +922,10 @@ Liệt kê để biết mình đang đứng ở đâu so với hệ thống th�
 Tám bảng ở mục 3, tuân thủ sáu nguyên tắc ở mục 4, xử lý tồn kho theo cách 1 ở mục 5, và luồng đặt hàng
 theo đúng thứ tự ở mục 6.
 
-Về cách tạo schema: hiện đang dùng `spring.jpa.hibernate.ddl-auto=update` — tiện lúc học vì Hibernate tự
-tạo bảng từ entity. Nhưng nó không quản lý được lịch sử thay đổi schema (không rollback được, không biết
-ai đổi gì lúc nào) nên **không dùng cho production**. Khi schema đã ổn định thì chuyển sang **Flyway**:
-mỗi thay đổi schema là một file SQL đánh số (`V1__create_tables.sql`, `V2__add_variants.sql`), chạy
-tuần tự và ghi lại lịch sử — đây là cách làm chuẩn trong dự án thật.
+Về cách tạo schema: v1 dùng `spring.jpa.hibernate.ddl-auto=update` — tiện lúc học vì Hibernate tự tạo
+bảng từ entity. Nhưng nó không quản lý được lịch sử thay đổi schema (không rollback được, không biết ai đổi
+gì lúc nào), không sửa được thứ đã tạo (khoá ngoại, `CHECK`, tên ràng buộc — mục 3, mục 3.6), nên **không
+dùng cho production**. Schema v1 đã chốt; việc tiếp theo về DB là chuyển sang **Flyway**: mỗi thay đổi
+schema là một file SQL đánh số (`V1__create_tables.sql`, `V2__add_variants.sql`), chạy tuần tự và ghi lại
+lịch sử — đây là cách làm chuẩn trong dự án thật. `V1` nên lấy đúng schema đang chạy (đã đối chiếu ở đầu
+mục 3), kèm tên tường minh cho mọi ràng buộc.

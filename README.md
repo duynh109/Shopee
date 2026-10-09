@@ -3,18 +3,18 @@
 Dự án thương mại điện tử gồm hai nửa trong cùng một repo: một frontend React và một backend Spring Boot
 được thiết kế lại từ đầu.
 
-Frontend được xây trước nên đang dùng một contract API cũ. Backend là phần đang làm hiện tại:
-được thiết kế lại từ đầu theo chuẩn REST thông dụng của hệ sinh thái Java, có tài liệu thiết kế riêng,
-và **không** bám theo contract cũ đó. Bước tích hợp sẽ sửa frontend để gọi backend này.
+Frontend được xây trước nên đang dùng một contract API cũ. Backend được thiết kế lại từ đầu theo chuẩn
+REST thông dụng của hệ sinh thái Java, có tài liệu thiết kế riêng, và **không** bám theo contract cũ đó.
+Bước tích hợp sẽ sửa frontend để gọi backend này.
 
 ## Trạng thái
 
-> **Hai nửa chưa nối với nhau.** Backend đang được làm cho đủ và đúng trước; phần tích hợp frontend
-> là giai đoạn sau. Chạy được từng nửa riêng, nhưng chưa chạy được luồng end-to-end.
+> **Hai nửa chưa nối với nhau.** Backend v1 đã xong; tích hợp frontend là giai đoạn tiếp theo. Chạy được
+> từng nửa riêng, nhưng chưa chạy được luồng end-to-end.
 
 | | Trạng thái |
 |---|---|
-| **Backend** | Xong 9/9 bước của lộ trình, đủ 29/29 endpoint. Hiện có: đăng ký, đăng nhập, đăng xuất bằng JWT kèm refresh token (xoay vòng, phát hiện token bị lộ, tự dọn token quá hạn); phân quyền USER/ADMIN theo từng nhóm endpoint; xử lý lỗi theo RFC 9457; hồ sơ cá nhân; danh mục; sản phẩm có phân trang, lọc, sắp xếp, album ảnh, xoá mềm; giỏ hàng; đặt hàng, xem đơn và huỷ đơn; admin xem mọi đơn, đổi trạng thái đơn theo máy trạng thái, xem danh sách người dùng; upload ảnh sản phẩm và avatar; gỡ sản phẩm thì tự dọn khỏi giỏ hàng của mọi người |
+| **Backend** | **v1 xong**: 9/9 bước của lộ trình, đủ 29/29 endpoint, hồi quy cuối 242/242 ca. Có: đăng ký, đăng nhập, đăng xuất bằng JWT kèm refresh token (xoay vòng, phát hiện token bị lộ, tự dọn token quá hạn); phân quyền USER/ADMIN theo từng nhóm endpoint; xử lý lỗi theo RFC 9457; hồ sơ cá nhân; danh mục; sản phẩm có phân trang, lọc, sắp xếp, album ảnh, xoá mềm; giỏ hàng; đặt hàng, xem đơn và huỷ đơn; admin xem mọi đơn, đổi trạng thái đơn theo máy trạng thái, xem danh sách người dùng; upload ảnh sản phẩm và avatar; gỡ sản phẩm thì tự dọn khỏi giỏ hàng của mọi người |
 | **Frontend** | Xong phần danh sách sản phẩm, chi tiết sản phẩm, tìm kiếm, lọc, phân trang, đăng nhập/đăng ký. Giỏ hàng và trang cá nhân còn là stub. Vẫn đang gọi contract API cũ, chưa trỏ sang backend này |
 | **Tích hợp** | Chưa bắt đầu — danh sách việc cần sửa ở `docs/API_SPEC.md` mục 12 |
 
@@ -76,9 +76,13 @@ Vài quyết định thiết kế đáng chú ý ở backend:
 mysql -u root -p -e "CREATE DATABASE shopee_db CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;"
 
 cd BE
-# sửa datasource và jwt.secret trong src/main/resources/application.properties
+cp .env.example .env    # rồi điền DB_PASSWORD và JWT_SECRET — cách tạo secret ghi ngay trong file
 ./mvnw spring-boot:run
 ```
+
+Secret không nằm trong `application.properties`: file đó chỉ ghi `${JWT_SECRET}` và `${DB_PASSWORD}`, giá trị
+lấy từ biến môi trường hoặc từ `BE/.env` (không commit; biến môi trường thật được ưu tiên). Thiếu thì app
+không khởi động và báo tên biến còn thiếu.
 
 API chạy ở `http://localhost:8081`. Hibernate tự tạo bảng (`ddl-auto=update`). Ảnh upload lưu ở `BE/uploads/`
 (tính từ thư mục chạy app, đường dẫn đầy đủ in ra log lúc khởi động) và được phục vụ ở `/images/**`.
@@ -117,6 +121,8 @@ Chạy ở `http://localhost:3000` — origin này đã được cấu hình COR
 | ✅ | 8. Nhóm API admin + upload ảnh | |
 | ✅ | 9. Refresh token | |
 
+Sau 9 bước là một đợt dọn dẹp chốt v1: trả `409` khi hai request cùng lúc trùng ràng buộc `UNIQUE`, chặn
+dữ liệu vượt độ dài cột, chuyển secret sang biến môi trường, tắt `open-in-view`, rà lại toàn bộ tài liệu.
 Chi tiết từng bước ở `docs/API_SPEC.md` mục 11.
 
 ## Những gì chưa làm
@@ -130,10 +136,8 @@ Liệt kê thẳng để khỏi phải đọc code mới biết:
 - **Chưa có test tự động.** Mỗi bước được kiểm chứng bằng cách chạy app rồi gọi API thật cho toàn bộ
   các ca và đối chiếu status code — phần đặt hàng còn thử cả request gửi song song. Các script đó chưa
   nằm trong repo; viết test tự động là việc cần làm
-- Hai request cùng lúc đụng một ràng buộc `UNIQUE` (đăng ký trùng email, thêm cùng một sản phẩm vào
-  giỏ, tạo danh mục trùng tên) thì request thua nhận `500` thay vì `409`. Dữ liệu vẫn đúng — ràng buộc ở
-  database đã chặn — chỉ có status code sai
-- Secret và mật khẩu database còn nằm trong `application.properties`, cần chuyển sang biến môi trường
+- Chưa dùng Flyway — schema do Hibernate tự tạo từ entity (`ddl-auto=update`), không có lịch sử thay đổi.
+  Đủ cho học và chạy local, không dùng cho production (`docs/DATABASE_DESIGN.md` mục 9)
 - Access token không thu hồi được: đăng xuất và đổi mật khẩu thu hồi refresh token ngay, nhưng access
   token đang cầm vẫn dùng được tới khi hết hạn (tối đa 15 phút); đổi role trong database cũng cần tối đa
   chừng đó mới có hiệu lực

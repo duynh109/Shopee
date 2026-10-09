@@ -22,8 +22,8 @@ khi làm gì — đừng suy ra tiến độ từ code, và khi làm xong một 
 
 ## Thứ tự làm việc
 
-**Làm BE cho đúng và đầy đủ trước, FE sửa sau.** FE hiện vẫn gọi contract API cũ
-(`{message, data}`, field `snake_case`); danh sách việc cần sửa ở FE nằm ở
+**Làm BE cho đúng và đầy đủ trước, FE sửa sau.** BE v1 đã xong (§11); việc tiếp theo là sửa FE. FE hiện vẫn
+gọi contract API cũ (`{message, data}`, field `snake_case`); danh sách việc cần sửa ở FE nằm ở
 `docs/API_SPEC.md` §12. Đừng viết thêm code FE theo contract cũ đó.
 
 ## Quy ước dễ sai
@@ -47,11 +47,16 @@ khi làm gì — đừng suy ra tiến độ từ code, và khi làm xong một 
 - `@Transactional` lấy từ `org.springframework.transaction.annotation`, **không** phải
   `jakarta.transaction` — IDE hay tự import nhầm. Khoá dòng thì dùng `@Lock(LockModeType...)`, không viết
   `FOR UPDATE` trong chuỗi JPQL (JPQL không có cú pháp đó, app sẽ không khởi động).
+- **`spring.jpa.open-in-view=false`**: DTO phải dựng xong bên trong method `@Transactional` của service.
+  Quên `@Transactional` ở một hàm đọc có quan hệ lazy thì nhận `LazyInitializationException` → `500`.
+- **Secret không bao giờ ghi vào `application.properties`** — file đó chỉ có `${JWT_SECRET}`, `${DB_PASSWORD}`,
+  không giá trị mặc định. Giá trị thật ở `BE/.env` (gitignore). Không in nội dung `.env` ra terminal hay chat.
 
 ## Chạy
 
 ```bash
 # BE
+cd BE && cp .env.example .env            # một lần: điền DB_PASSWORD, JWT_SECRET
 cd BE && ./mvnw spring-boot:run          # cần JAVA_HOME trỏ tới JDK 21
 cd BE && ./mvnw clean compile            # kiểm tra compile thật
 

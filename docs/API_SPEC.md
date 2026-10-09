@@ -40,7 +40,7 @@ Mọi endpoint đều nằm dưới prefix `/api`. Lý do dùng prefix thay vì 
 | Cấu hình tập trung | `configurer.addPathPrefix("/api", HandlerTypePredicate.forAnnotation(RestController.class))` trong `WebMvcConfigurer` | Chỉ áp cho `@RestController`, file tĩnh vẫn ở root |
 | `server.servlet.context-path=/api` | 1 dòng trong properties | Prefix **mọi thứ**, kể cả file tĩnh và trang lỗi → ảnh upload cũng bị đẩy vào `/api` |
 
-Giai đoạn học nên dùng cách 1 cho dễ theo dõi.
+Dự án dùng cách 1: mở controller ra là thấy full path, không phải nhớ có cấu hình nào thêm prefix.
 
 ### 1.2. Hình dạng response
 
@@ -104,22 +104,18 @@ nên `id` không được chứa dấu chấm. ID số tự tăng hoàn toàn th
 > Endpoint nào cần token, endpoint nào không: xem bảng ở **§1.10**.
 
 ```
-Authorization: Bearer eyJhbGciOiJIUzI1NiJ9...
+Authorization: Bearer eyJhbGciOiJIUzUxMiJ9...
 ```
 
-Đây là chuẩn RFC 6750, được Postman, Swagger UI và mọi thư viện HTTP hỗ trợ sẵn.
+Đây là chuẩn RFC 6750, được Postman, Swagger UI và mọi thư viện HTTP hỗ trợ sẵn. `JwtAuthenticationFilter`
+chỉ nhận đúng dạng có tiền tố `Bearer `; header thiếu tiền tố bị coi như không gửi token, nên endpoint cần
+đăng nhập trả `401 /errors/token-invalid`.
 
-**Payload hiện tại chỉ có `sub` (email), `iat`, `exp` — không có `role`.** Quyền được đọc từ DB ở
-mỗi request nên đổi `role` có hiệu lực ngay. Dự kiến đưa `role` vào payload ở bước 9, xem §3.4.
+**Payload gồm `sub` (email), `role`, `iat`, `exp`**, ký HS512. Filter dựng quyền thẳng từ `role` trong token,
+không hỏi DB — đổi `role` trong DB chỉ có hiệu lực khi access token được đổi mới (tối đa 15 phút), xem §3.4.
 
 > Payload JWT chỉ được **Base64**, không phải mã hoá — ai cầm được token đều đọc được nội dung mà
 > không cần secret. Chữ ký chỉ chống **sửa**, không chống **đọc**. Đừng đặt thông tin nhạy cảm vào đó.
-
-> Nên viết filter chấp nhận **cả hai** dạng (có và không có tiền tố) để đỡ vướng lúc test:
-> ```java
-> String header = request.getHeader("Authorization");
-> String token = (header != null && header.startsWith("Bearer ")) ? header.substring(7) : header;
-> ```
 
 ### 1.5. Quy ước đặt tên
 
@@ -150,7 +146,7 @@ camelCase là mặc định của Jackson và đúng convention Java — không 
 | `403` | Đã đăng nhập nhưng không đủ quyền |
 | `404` | Không tìm thấy tài nguyên |
 | `405` | Đường dẫn đúng nhưng sai HTTP method |
-| `409` | Xung đột trạng thái (huỷ đơn đã giao, hết hàng khi đặt) |
+| `409` | Xung đột trạng thái (huỷ đơn đã giao, hết hàng khi đặt), hoặc hai request cùng lúc trùng một ràng buộc `UNIQUE` |
 | `413` | File upload vượt dung lượng cho phép (ảnh > 1MB) |
 | `415` | Thiếu hoặc sai `Content-Type` |
 | `422` | **Lỗi validate dữ liệu đầu vào** |
@@ -165,7 +161,7 @@ camelCase là mặc định của Jackson và đúng convention Java — không 
 **`400` hay `422` với query param nhận qua `@ModelAttribute`** (`ProductQuery`, `OrderQuery`): Spring gom
 cả lỗi *đổi kiểu* (`?page=abc`) lẫn lỗi *vi phạm luật* vào cùng một `MethodArgumentNotValidException`.
 `GlobalExceptionHandler` tách chúng bằng `FieldError.isBindingFailure()` — có ít nhất một lỗi đổi kiểu thì
-`400`, còn lại `422`. Trước khi tách, `?page=abc` trả `422` kèm câu `Failed to convert value of type
+`400`, còn lại `422`. Không tách thì `?page=abc` nhận `422` kèm câu `Failed to convert value of type
 'java.lang.String' to required type 'java.lang.Integer'` hiện thẳng lên toast: sai status, và lộ chi tiết
 nội bộ.
 
@@ -210,7 +206,7 @@ code không phân biệt được hai ca đó.
 | `403` | `/errors/forbidden` | Đã đăng nhập nhưng không đủ quyền |
 | `404` | `/errors/not-found` | Không tìm thấy tài nguyên |
 | `405` | `/errors/method-not-allowed` | Sai HTTP method |
-| `409` | `/errors/conflict` | Xung đột trạng thái |
+| `409` | `/errors/conflict` | Xung đột trạng thái; hoặc hai request cùng lúc đụng một ràng buộc `UNIQUE` (xem dưới) |
 | `413` | `/errors/content-too-large` | File upload vượt 1MB (§9.4) |
 | `415` | `/errors/unsupported-media-type` | Thiếu hoặc sai `Content-Type`. `title` nhắc đúng loại endpoint cần: `application/json`, hoặc `multipart/form-data` với hai endpoint upload |
 | `422` | `/errors/validation` | Dữ liệu đầu vào không hợp lệ |
@@ -230,6 +226,36 @@ POST /api/auth/register  →  422
   }
 }
 ```
+
+**Lỗi 409 khi hai request cùng lúc đụng một ràng buộc `UNIQUE`.** Service luôn kiểm tra trước khi ghi —
+email đã có chưa, tên danh mục trùng chưa, sản phẩm đã nằm trong giỏ chưa — nên request đến *sau* nhận câu
+trả lời rõ ràng (`422 errors.email`, giỏ cộng dồn…). Hai request đến *cùng lúc* thì cùng qua bước kiểm tra,
+và chỉ ràng buộc `UNIQUE` ở DB chặn được request thứ hai (`DATABASE_DESIGN.md` §4.6). DB từ chối thì Spring
+ném `DataIntegrityViolationException`; `GlobalExceptionHandler` xem nguyên nhân bên trong
+(`org.hibernate.exception.ConstraintViolationException`) thuộc loại nào:
+
+| `getKind()` | Trả về | Vì sao |
+|---|---|---|
+| `UNIQUE` | `409 /errors/conflict`, `title` = `Thao tác bị trùng với một yêu cầu khác vừa xảy ra, vui lòng thử lại`; log một dòng WARN chỉ ghi tên ràng buộc | Không ai sai, chỉ trùng thời điểm. Thử lại là nhận đúng câu trả lời của request đến sau: đăng ký → `422 errors.email`, giỏ → `200` cộng dồn |
+| Mọi loại khác — `NOT_NULL`, `FOREIGN_KEY`, `CHECK` — và dữ liệu quá dài cột | `500` + log ERROR kèm stack trace | Code kiểm thiếu; thử lại lần nào cũng hỏng, nên phải để lộ ra cho người sửa code thấy |
+
+Đã đo, mỗi loại 10 lượt hai request song song — đăng ký cùng email, tạo trùng tên danh mục, bấm "Thêm vào
+giỏ" hai lần với sản phẩm chưa có trong giỏ: lượt nào cũng 1 thành công + 1×`409`, log không có ERROR.
+
+Dòng WARN không ghi `ex.getMessage()` vì message chứa luôn giá trị bị trùng — email của người dùng. Hibernate
+cũng tự ghi mỗi lỗi SQL ở mức WARN kèm giá trị đó (`Duplicate entry 'an@gmail.com' …`, logger
+`org.hibernate.orm.jdbc.error`), nên `application.properties` nâng logger này lên `ERROR`. Không mất thông tin:
+lỗi thật vẫn được `GlobalExceptionHandler` ghi ERROR kèm stack trace (đã thử với `Data too long`). Đo lại trên
+toàn bộ hồi quy: log không chứa email nào.
+
+Hai cách viết sai, đã thử:
+
+- **So chuỗi trong message**, kiểu `getMessage().contains("UNIQUE")`: message của MySQL là
+  `Duplicate entry '…' for key 'users.UK6dot…'`, không có chữ "UNIQUE", lại chứa luôn giá trị người dùng
+  nhập. Kết quả phụ thuộc vào dữ liệu: tạo trùng danh mục "Áo thun" → `500`, "Hàng UNIQUE" → `409`. Message
+  là câu viết cho người đọc log, giống `title`; `getKind()` mới là giá trị để code so sánh, giống `type`.
+- **Bắt cả `DataIntegrityViolationException` thành `409`**: một URL ảnh quá 255 kí tự (giả lập thiếu `@Size`)
+  nhận "vui lòng thử lại" ở cả 3 lần thử, và log không có dòng ERROR nào — bug bị che mất.
 
 ### 1.7. Rule validate
 
@@ -266,8 +292,8 @@ trong `BE/.../validation/`, dùng làm `@Pattern(regexp = ValidationPatterns.PHO
 `UpdateProfileRequest.phone` lẫn `CreateOrderRequest.recipientPhone`. Hai lý do:
 
 - Trang đặt hàng điền sẵn số từ hồ sơ. Hai luật lệch nhau thì có số hồ sơ đã nhận mà lúc đặt hàng
-  lại `422` — trước khi gộp, `8412345678` qua được hồ sơ nhưng bị chặn ở đặt hàng, `+84912345678`
-  thì ngược lại.
+  lại `422` — ví dụ một luật nhận `8412345678` còn luật kia chỉ nhận `+84912345678`, thì số nào cũng
+  có một màn từ chối.
 - Không nhận `+84...`: cùng một số không được có hai cách viết trong `orders`, nếu không thì tìm đơn
   theo số điện thoại phải xử lý cả hai.
 
@@ -286,7 +312,7 @@ chỉ trượt `@Pattern`.
 
 ### 1.9. CORS
 
-FE chạy ở `http://localhost:3000`, BE ở `http://localhost:8081` → khác origin, cần bật CORS trong
+FE chạy ở `http://localhost:3000`, BE ở `http://localhost:8081` → khác origin, nên CORS được bật trong
 `SecurityConfig`: cho phép origin `http://localhost:3000`, method `GET, POST, PUT, DELETE, OPTIONS`,
 header `Authorization` và `Content-Type`.
 
@@ -345,8 +371,8 @@ nên không thể đòi access token hợp lệ. Cả hai tự xác thực bằn
 ⁵ `ProductList` gọi để hiển thị danh sách + tìm kiếm + lọc; `ProductDetail` gọi lần nữa cho khối
 "sản phẩm tương tự" (cùng category).
 
-⁶ **Chưa có màn admin nào ở FE.** Giai đoạn đầu gọi các API này bằng Postman, hoặc seed dữ liệu bằng
-`data.sql`. Màn admin nếu làm thì là một app riêng, không nhét vào FE người mua.
+⁶ **Chưa có màn admin nào ở FE.** Các API này hiện gọi bằng Postman hoặc curl. Màn admin nếu làm thì là
+một app riêng, không nhét vào FE người mua.
 
 ⁷ `Cart` gọi để hiển thị giỏ; `Header` gọi để hiện con số trên icon giỏ hàng.
 
@@ -442,7 +468,7 @@ chưa đăng nhập không dò được API có những đường dẫn nào. C�
 | `priceBeforeDiscount` | Giá gốc | FE tính % giảm = `(before - price) / before` |
 | `quantity` | Tồn kho | Dùng để chặn không cho mua quá số này |
 | `rating` | Điểm trung bình 0–5 | v1 để số tĩnh, tính thật khi có `reviews` |
-| `description` | **HTML** | FE sanitize trước khi render |
+| `description` | **HTML**, tối đa 10.000 kí tự | FE sanitize trước khi render. Giới hạn đếm theo `String.length()` của Java — emoji tính 2 — và vì sao là 10.000: `DATABASE_DESIGN.md` §3.3 |
 | `category` | Object lồng, không phải id | |
 
 **Dạng rút gọn** — trả ở `GET /api/products` (danh sách). Giống dạng đầy đủ nhưng **bỏ hai field
@@ -575,7 +601,7 @@ Tên, ảnh và giá là **bản sao tại thời điểm đặt hàng**, không
 **Response `201`**
 ```json
 {
-  "accessToken": "eyJhbGciOiJIUzI1NiJ9...",
+  "accessToken": "eyJhbGciOiJIUzUxMiJ9...",
   "expires": 900,
   "refreshToken": "NJNfU__P8x1_fXcGkmzFRcp9ZikDy49Qg6L3K6ncbvs",
   "user": { "...": "object User ở mục 2.1" }
@@ -597,7 +623,8 @@ dùng để xin access token mới — xem §3.4; DB chỉ lưu bản băm của
 
 **Xử lý phía BE**
 1. Validate email + password.
-2. Kiểm tra email tồn tại chưa → nếu rồi ném lỗi 422.
+2. Kiểm tra email tồn tại chưa → nếu rồi ném lỗi 422. Hai request cùng email đến cùng lúc thì cả hai qua
+   bước này; ràng buộc `UNIQUE` chặn request sau, request đó nhận `409` (§1.6).
 3. Hash password bằng BCrypt.
 4. Lưu user với role mặc định `USER`.
 5. Phát access token (JWT) và refresh token, trả về kèm user (đã loại bỏ password).
@@ -906,9 +933,10 @@ Trần `limit = 100` để một request không kéo được cả bảng về.
 > `totalPages = ceil(totalItems / limit)`. `Page<T>` của Spring Data cho sẵn cả hai qua `getTotalPages()`
 > và `getTotalElements()`.
 
-**Gợi ý triển khai:** dùng `Specification<Product>` để ghép động các điều kiện lọc (mỗi param là một
-`Predicate`, param nào null thì bỏ qua), kết hợp `PageRequest.of(page - 1, limit, Sort.by(...))`.
-Luôn thêm điều kiện `deleted_at IS NULL`.
+**Cài đặt:** query param nhận vào record `ProductQuery` (`@ModelAttribute`); `ProductSpecifications.withFilter()`
+ghép động các điều kiện lọc bằng `Specification<Product>` (mỗi param là một `Predicate`, param nào null thì bỏ
+qua); `ProductService` gọi `findAll(spec, PageRequest.of(page - 1, limit, Sort.by(direction, sortBy)))`. Điều
+kiện `deleted_at IS NULL` không phải viết tay — `@SQLRestriction` trên entity tự thêm vào mọi truy vấn (§5.3).
 
 ### 5.2. `GET /api/products/{id}`
 
@@ -1006,7 +1034,8 @@ Nghĩa nghiệp vụ: *"còn sản phẩm là không xoá được danh mục, k
 `images[]` lưu ở bảng `product_images` (`DATABASE_DESIGN.md` §3.4), nối bằng
 `@OneToMany(mappedBy = "product", cascade = ALL, orphanRemoval = true)` kèm `@OrderBy("sortOrder ASC")`.
 
-- `POST` và `PUT` nhận **mảng URL**; thứ tự trong mảng chính là `sort_order`.
+- `POST` và `PUT` nhận **mảng URL**; thứ tự trong mảng chính là `sort_order`. Mỗi URL không được rỗng và
+  tối đa 255 kí tự (cột `url VARCHAR(255)`); sai thì `422` với key chỉ đúng phần tử, ví dụ `errors["images[1]"]`.
 - `PUT` **thay toàn bộ album**: ảnh cũ không còn trong mảng sẽ bị xoá khỏi DB nhờ `orphanRemoval`.
 - Chỉ `GET /api/products/{id}` trả `images[]`; danh sách không trả (§2.3), nên câu truy vấn danh sách
   không đụng tới bảng ảnh.
@@ -1052,7 +1081,8 @@ Body của `POST` và `PUT` đều là `{ "name": "Áo thun" }`.
 **Vì sao trùng tên là `422` chứ không phải `409`:** theo §1.6, `422` là *dữ liệu người dùng nhập vào
 không hợp lệ* — mà "tên này đã có người dùng rồi" đúng là loại đó, y hệt ca đăng ký trùng email đang
 trả `422` kèm `errors.email`. Còn `409` dành cho *trạng thái hệ thống không cho phép*, đúng với ca xoá
-danh mục còn sản phẩm: tên hợp lệ, danh mục tồn tại, chỉ là không được xoá lúc này.
+danh mục còn sản phẩm: tên hợp lệ, danh mục tồn tại, chỉ là không được xoá lúc này. (Ngoại lệ duy nhất: hai
+request tạo cùng một tên **cùng lúc** thì request sau bị ràng buộc `UNIQUE` chặn và nhận `409` — §1.6.)
 
 ```json
 POST /api/admin/categories  →  422
@@ -1064,50 +1094,56 @@ POST /api/admin/categories  →  422
 > giữ nguyên tên cũ sẽ bị báo "tên đã tồn tại" — nó tìm thấy chính nó. Dùng
 > `existsByNameAndIdNot(name, id)` chứ không phải `existsByName(name)`.
 
-### 6.3. Chốt thiết kế cho bước 4
+### 6.3. Quan hệ `Product` → `Category`
 
-- **`products.category_id` là `NOT NULL`** theo đúng `DATABASE_DESIGN.md` §3.3. Kéo theo:
-  `CreateProductRequest` phải nhận thêm `categoryId`, và `ProductService` tra cứu danh mục, không
-  thấy thì `404`.
-- **Quan hệ một chiều.** Chỉ `Product` có `@ManyToOne(fetch = FetchType.LAZY)`; **không** thêm
-  `@OneToMany` vào `Category`. Kiểm tra "danh mục còn sản phẩm không" dùng
-  `productRepository.existsByCategoryId(id)` — một câu đếm, khỏi nạp cả danh sách, và tránh luôn hai
-  cái bẫy của quan hệ hai chiều là JSON đệ quy vô tận với `LazyInitializationException`.
+- **`products.category_id` là `NOT NULL`** theo đúng `DATABASE_DESIGN.md` §3.3: `ProductRequest.categoryId`
+  bắt buộc (`@NotNull`), `ProductService` tra cứu danh mục, không thấy thì `404`.
+- **Quan hệ một chiều.** Chỉ `Product` có `@ManyToOne(fetch = FetchType.LAZY)`; `Category` **không** có
+  `@OneToMany`. Câu hỏi duy nhất theo chiều ngược — "danh mục còn sản phẩm không" lúc xoá — là một câu đếm
+  (`countByCategoryIdIncludingDeleted`, §5.3), khỏi nạp cả danh sách, và tránh luôn hai cái bẫy của quan hệ
+  hai chiều là JSON đệ quy vô tận với `LazyInitializationException`.
 - **`@ManyToOne` mặc định là `EAGER`** (ngược với `@OneToMany` mặc định `LAZY`) nên phải ghi `LAZY`
   tường minh.
-- **Nợ kỹ thuật chấp nhận tạm:** `ProductController` đang trả thẳng entity `Product`, nên JSON sản
-  phẩm lòi ra cả object danh mục kèm `createdAt`/`updatedAt`. Bước 5 xử lý bằng `ProductResponse`.
-  N+1 thì **không** để lại tới bước 5 — xem §6.4.
-- **`SecurityConfig` không cần sửa** cho bước này: `/api/admin/**` đã có `hasRole("ADMIN")` và
-  `GET /api/categories/**` đã `permitAll`. Đây là ngoại lệ với quy tắc "thêm endpoint phải sửa ba chỗ"
-  ở `CLAUDE.md` — vẫn phải curl kiểm chứng chứ đừng tin suông.
+- **Phân quyền hai lớp.** Endpoint danh mục không cần rule riêng trong `SecurityConfig`: `/api/admin/**` đã
+  `hasRole("ADMIN")` và `GET /api/categories/**` đã `permitAll` — ngoại lệ với quy tắc "thêm endpoint phải sửa
+  ba chỗ" ở `CLAUDE.md`. `AdminCategoryController` còn mang `@PreAuthorize("hasRole('ADMIN')")` ở mức class:
+  đã thử tạm tắt rule `/api/admin/**`, một mình `@PreAuthorize` vẫn trả `403` cho USER.
 
 ### 6.4. Nạp kèm danh mục: `@EntityGraph` trên từng câu query
 
-`Product.category` khai `LAZY`, nên sau một `findAll()` thuần, field đó **không** giữ một `Category`
-mà giữ một **proxy** — class con do Hibernate sinh lúc chạy, bên trong rỗng, chỉ nhớ khoá ngoại.
-Đo được bằng cách in class thật:
+`Product.category` khai `LAZY`, nên sau một truy vấn thuần, field đó **không** giữ một `Category` mà giữ
+một **proxy** — class con do Hibernate sinh lúc chạy, bên trong rỗng, chỉ nhớ khoá ngoại. Đo được bằng cách
+in class thật:
 
 ```
-POST (tự tay getEntityById)  →  com.duynh.shopee.category.Category
-GET  (qua findAll)           →  com.duynh.shopee.category.Category$HibernateProxy
+tự tay getEntityById  →  com.duynh.shopee.category.Category
+qua findAll thuần     →  com.duynh.shopee.category.Category$HibernateProxy
 ```
 
-Proxy gây hai chuyện, và cả hai đều lộ ra vì `ProductController` trả thẳng entity:
+Proxy chỉ đi lấy dữ liệu khi có ai gọi getter của nó. DTO sản phẩm gọi `product.getCategory().getName()` để
+dựng object `category` lồng, nên mỗi sản phẩm sinh thêm một câu `select … from categories where id = ?` —
+**N+1**: đã đo 5 sản phẩm thuộc 4 danh mục → 5 câu SQL. Nếu trả thẳng entity ra JSON thì proxy còn làm lòi
+ra field rác `"category": { …, "hibernateLazyInitializer": {}, … }` (Jackson coi method
+`getHibernateLazyInitializer()` là một property) — thêm một lý do để luôn trả DTO.
 
-1. **Rác trong JSON.** Proxy có thêm method `getHibernateLazyInitializer()`; Jackson soi class lúc
-   chạy nên coi đó là một property và serialize luôn:
-   `"category": { …, "hibernateLazyInitializer": {}, … }`
-2. **N+1.** Jackson gọi `getName()` trên proxy thì Hibernate mới chạy `select … from categories
-   where id = ?`. Đo thực tế: 5 sản phẩm thuộc 4 danh mục → **5 câu SQL**.
+Lazy loading chỉ chạy được sau khi service đã return nếu `spring.jpa.open-in-view` bật — mặc định của
+Spring Boot: session Hibernate, và cả kết nối DB, được giữ suốt request tới lúc Jackson ghi xong JSON.
 
-Lazy loading vẫn chạy được sau khi service đã return là nhờ `spring.jpa.open-in-view` bật mặc định
-(Spring Boot cảnh báo hẳn một dòng lúc khởi động) — session Hibernate còn mở tới lúc render response.
+**App này tắt nó** (`spring.jpa.open-in-view=false`). Bật thì mỗi request giữ kết nối lâu hơn cần thiết
+(pool chỉ có 10), và truy vấn có thể lén chạy ngoài service lúc ghi JSON mà không ai thấy. Quy tắc thay thế:
+mọi DTO được dựng xong **bên trong** một method `@Transactional` của service, cái gì cần thì nạp kèm bằng
+`@EntityGraph`/`JOIN FETCH` hoặc nạp theo lô bằng `@BatchSize` khi transaction còn mở. Đã đo: tắt đi, toàn bộ
+hồi quy vẫn đạt. Tắt còn làm thiếu sót lộ ra thay vì bị giấu: bỏ `@Transactional(readOnly = true)` ở
+`OrderService.getMyOrders` → `GET /api/orders` trả `500 LazyInitializationException … (no session)` (dòng
+hàng nạp theo lô sau khi transaction đã đóng); bật `open-in-view` lại thì cùng code đó trả `200`, không ai
+biết thiếu transaction. `getMyOrder` — một đơn — thì không bị ảnh hưởng vì `@EntityGraph(attributePaths =
+"orderItems")` đã nạp dòng hàng ngay trong câu SELECT đầu.
 
-**Cách xử lý đã chọn:** `@EntityGraph(attributePaths = "category")` ghi đè lên `findAll()` và
-`findById()` trong `ProductRepository`. Hibernate nạp kèm danh mục trong **cùng một câu SELECT** bằng
-JOIN, nên field giữ `Category` thật. Đo lại: `GET /api/products` và `GET /api/products/{id}` đều còn
-**1 câu SQL**, JSON hết field rác.
+**Cách xử lý đã chọn:** `ProductRepository` ghi đè hai câu và gắn `@EntityGraph` lên từng câu —
+`findAll(Specification, Pageable)` cho danh sách nạp kèm `category`, `findById()` cho chi tiết nạp kèm
+`category` lẫn `images`. Hibernate nạp kèm trong **cùng một câu SELECT** bằng JOIN, nên field giữ `Category`
+thật. Đo lại: `GET /api/products?limit=5` chạy 1 câu SELECT (đã JOIN danh mục) + 1 câu `count` cho phân
+trang; `GET /api/products/{id}` chạy 1 câu `UPDATE` tăng `view` (§5.2) + 1 câu SELECT.
 
 Quan hệ **vẫn khai `LAZY`**: đó là mặc định cho mọi truy vấn khác, `@EntityGraph` chỉ nói "riêng câu
 này nạp kèm". Annotation gắn lên **từng câu query**, không phải lên entity — chữa `findAll()` không
@@ -1118,7 +1154,7 @@ Hai cách khác đã cân nhắc rồi bỏ:
 | Cách | Vì sao bỏ |
 |---|---|
 | Đổi sang `EAGER` | Mọi truy vấn đụng `Product` đều gánh thêm danh mục, kể cả chỗ không cần |
-| `@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})` trên `Category` | Chỉ giấu triệu chứng 1, **N+1 vẫn còn**; lại là annotation Jackson 2 trong dự án Jackson 3 (xem `CLAUDE.md`) |
+| `@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})` trên `Category` | Chỉ giấu field rác, **N+1 vẫn còn**; lại là annotation Jackson 2 trong dự án Jackson 3 (xem `CLAUDE.md`) |
 
 ---
 
@@ -1146,8 +1182,9 @@ Mỗi phần tử nhúng nguyên object product nên FE render được toàn b�
 — nếu theo `updatedAt` thì mỗi lần người dùng bấm tăng số lượng, dòng đó lại nhảy lên đầu danh sách
 ngay dưới con trỏ chuột của họ.
 
-**Chỉ một câu SQL.** Truy vấn dùng `JOIN FETCH ci.product` + `JOIN FETCH p.category`, nên giỏ bao
-nhiêu món cũng chỉ một lần xuống DB. Để lazy loading tự xoay thì mỗi dòng giỏ hàng sinh thêm một câu
+**Phần giỏ chỉ một câu SQL.** Truy vấn dùng `JOIN FETCH ci.product` + `JOIN FETCH p.category`, nên giỏ bao
+nhiêu món cũng chỉ một lần xuống DB (cả request là 2 câu: thêm một câu `SELECT users` để lấy id người gọi
+từ email trong token — §3.4). Để lazy loading tự xoay thì mỗi dòng giỏ hàng sinh thêm một câu
 cho product và một câu cho category — giỏ 30 món thành hơn 60 câu.
 
 **Dòng trỏ tới sản phẩm đã xoá mềm sẽ không xuất hiện.** Xem §7.6.
@@ -1176,6 +1213,11 @@ cho product và một câu cho category — giỏ 30 món thành hơn 60 câu.
 4. Kiểm tra tổng `quantity` không vượt `product.quantity` → vượt thì `422` với
    `errors: { "quantity": "Số lượng vượt quá số lượng sản phẩm trong kho" }`.
 5. **Không** trừ tồn kho ở bước này — chỉ trừ khi đặt hàng.
+
+Bấm "Thêm vào giỏ" hai lần thật nhanh với sản phẩm **chưa có** trong giỏ: cả hai request cùng thấy "chưa có"
+ở bước 2 và cùng tạo dòng mới; `UNIQUE(user_id, product_id)` chặn request sau, request đó nhận `409` (§1.6).
+Giỏ lúc đó có số lượng của lần bấm đầu; thử lại thì cộng dồn bình thường. FE nên khoá nút trong lúc chờ
+response để ca này hiếm khi xảy ra.
 
 Phép cộng ở bước 2 được thực hiện ở kiểu `long` rồi mới so với tồn kho. Cộng bằng `int` thì hai số
 gần 2,1 tỷ cộng lại cho ra **số âm** — và số âm thì lọt qua mọi phép kiểm tra `<= tồn kho`.
@@ -1424,7 +1466,7 @@ prepared statement.
 > viết lại thành `select ... from (select ... from orders where user_id=? order by ... limit ?,?) o1_0
 > left join order_items ...`, tức phân trang đơn trong subquery trước rồi mới nối dòng hàng; kết quả đúng
 > và không có cảnh báo. Vẫn giữ `@BatchSize` vì một annotation trên collection phủ **mọi** câu nạp đơn
-> (có lọc `status`, không lọc, danh sách admin ở bước 8), còn `@EntityGraph` phải gắn lại trên từng
+> (có lọc `status`, không lọc, danh sách của admin ở §9.2), còn `@EntityGraph` phải gắn lại trên từng
 > method — quên một method là N+1 quay về mà không có triệu chứng gì.
 
 ### 8.3. `GET /api/orders/{id}` — chi tiết một đơn
@@ -1486,7 +1528,12 @@ Không gửi body → `400`.
 3. Hoàn kho từng dòng qua `ProductService.increaseStock(productId, quantity)` (`MANDATORY`): cộng trả
    `quantity`, trừ lại `sold`.
 4. `saveAndFlush` rồi mới dựng response — `@LastModifiedDate` chỉ được điền lúc flush; `save()` thường
-   trả về `updatedAt` cũ (cùng lỗi đã gặp ở §4.2).
+   hoãn việc ghi tới lúc commit, tức **sau** khi response đã dựng xong, nên trả về `updatedAt` cũ. Mọi API
+   sửa một bản ghi có sẵn rồi trả lại nó đều dùng `saveAndFlush` vì cùng lý do: `PUT /api/users/me`, sửa danh
+   mục, sửa sản phẩm, sửa số lượng giỏ, **thêm vào giỏ khi cộng dồn** (§7.2), huỷ đơn, đổi trạng thái đơn. Tạo
+   bản ghi mới thì `save()` là đủ: với id `IDENTITY`, câu `INSERT` chạy ngay lúc `save()`. Đã đo với thêm
+   vào giỏ: cộng dồn mà dùng `save()` thì response trả `updatedAt` của lần thêm trước, `GET /api/cart` ngay
+   sau đó mới thấy giờ mới.
 
 **Vì sao khoá dòng.** Bấm "Huỷ" hai lần (hoặc hai tab): không có khoá thì cả hai request cùng đọc thấy
 `PENDING`, cùng hoàn kho — kho bị cộng gấp đôi. Có khoá thì request sau đứng chờ ngay ở câu `SELECT`, tới
@@ -1518,10 +1565,10 @@ còn ném lỗi thì đơn đó sẽ không bao giờ huỷ được. Đã kiể
 
 **Quyền:** 👑 **Chỉ ADMIN**
 
-**Màn FE:** không có. Chưa có màn admin ở FE — gọi bằng Postman hoặc seed `data.sql`.
+**Màn FE:** không có. Chưa có màn admin ở FE — gọi bằng Postman hoặc curl.
 
-SecurityConfig đã chặn cả nhóm bằng `.requestMatchers("/api/admin/**").hasRole("ADMIN")`.
-Thêm `@PreAuthorize("hasRole('ADMIN')")` ở tầng method là lớp phòng thủ thứ hai.
+`SecurityConfig` chặn cả nhóm bằng `.requestMatchers("/api/admin/**").hasRole("ADMIN")`. Các controller
+admin còn mang `@PreAuthorize("hasRole('ADMIN')")` ở mức class — lớp phòng thủ thứ hai (§6.3).
 Nhóm này cần thiết vì phải có cách tạo dữ liệu sản phẩm/danh mục và xử lý đơn hàng.
 
 | Method | Path | Mô tả |
@@ -1715,10 +1762,10 @@ File 5 MiB và 30 MiB vẫn nhận đủ response `413`, Tomcat không cắt k�
 
 **Dấu `/` cuối của `app.upload.public-url` chỉ được có đúng một lần.** Ghép thêm một dấu nữa trong code thì
 URL thành `/images//<uuid>.png`. `StrictHttpFirewall` của Spring Security từ chối mọi URL chứa `//`, kể cả
-khi có token hợp lệ, nên client nhận `401` khó hiểu — trong khi URL hỏng đã kịp lưu vào DB. Đã gặp lỗi này
-lúc làm bước 8.
+khi có token hợp lệ, nên client nhận `401` khó hiểu — trong khi URL hỏng đã kịp lưu vào DB. Vì vậy URL
+được ghép bằng `publicUrl + filename`, không chèn thêm `/`.
 
-**Chưa làm ở v1:** file đã upload mà không ai dùng tới (upload xong không gọi `PUT`, hoặc đổi avatar lần
+**Giới hạn của v1:** file đã upload mà không ai dùng tới (upload xong không gọi `PUT`, hoặc đổi avatar lần
 nữa) vẫn nằm lại trên đĩa, chưa có việc dọn. Cũng chưa giới hạn số lần upload của một user.
 
 ---
@@ -1737,7 +1784,7 @@ nữa) vẫn nằm lại trên đĩa, chưa có việc dọn. Cũng chưa giới
 | JWT filter | ✅ `JwtAuthenticationFilter` (`OncePerRequestFilter`) | — |
 | Refresh token | ✅ Phát khi login/register, đổi token có xoay vòng + phát hiện dùng lại (§3.4), logout thu hồi (§3.3), đổi mật khẩu thu hồi mọi token (§4.2), access token mang `role` và sống 15 phút, filter không hỏi DB, job hằng ngày xoá token quá hạn (§3.4) | — |
 | Bảo vệ endpoint | ✅ Phân quyền theo nhóm + `STATELESS` | Thêm rule khi có endpoint mới |
-| JWT secret | ⚠️ Đã ra `application.properties` | Chuyển sang biến môi trường trước khi public repo |
+| JWT secret, mật khẩu DB | ✅ `application.properties` chỉ ghi `${JWT_SECRET}` / `${DB_PASSWORD}`, không có giá trị mặc định — thiếu thì app không khởi động và báo tên biến. Giá trị lấy từ biến môi trường, hoặc file `BE/.env` (không commit, mẫu ở `BE/.env.example`). Secret xuất hiện trong các commit cũ đã bị thay, không còn ký được token: đã thử ký token ADMIN bằng nó → `401 token-invalid` | — |
 | Entity Product | ✅ Đủ field theo `DATABASE_DESIGN` §3.3, `price` là `Long`, soft delete, album ảnh | — |
 | Entity User | ✅ Đủ field + `@CreatedDate`/`@LastModifiedDate` | — |
 | Entity Category | ✅ Entity + CRUD đầy đủ, `Product.category` `@ManyToOne` | — |
@@ -1748,7 +1795,7 @@ nữa) vẫn nằm lại trên đĩa, chưa có việc dọn. Cũng chưa giới
 | Dọn giỏ khi gỡ sản phẩm | ✅ `ProductDeletedEvent` → `CartService.onProductDeleted`, một câu `DELETE`, cùng transaction (§5.3) | — |
 | Upload ảnh | ✅ `MultipartFile`, kiểm magic number, tên UUID, tối đa 1MB → `413`, phục vụ ở `/images/**` (§9.4) | File không dùng tới vẫn nằm trên đĩa; chuyển object storage khi chạy nhiều server |
 | Phân trang / lọc | ✅ `GET /api/products` (`Pageable` + `Specification`), `GET /api/orders` và `GET /api/admin/orders` (`Pageable` + lọc `status`), `GET /api/admin/users` | — |
-| Tranh chấp ràng buộc `UNIQUE` | ⚠️ Hai request cùng lúc cùng đụng một `UNIQUE` (`users.email`, `categories.name`, `cart_items(user_id, product_id)`, `orders.order_code`): request thua nhận `DataIntegrityViolationException` → `500`. Dữ liệu vẫn đúng, chỉ status sai | Thêm handler trong `GlobalExceptionHandler` → `409` |
+| Tranh chấp ràng buộc `UNIQUE` | ✅ Hai request cùng lúc cùng đụng một `UNIQUE` (`users.email`, `categories.name`, `cart_items(user_id, product_id)`, `orders.order_code`): request đến sau nhận `409`, thử lại là đúng; các vi phạm ràng buộc khác vẫn `500` (§1.6) | — |
 
 ---
 
@@ -1766,10 +1813,16 @@ nữa) vẫn nằm lại trên đĩa, chưa có việc dọn. Cũng chưa giới
 | **8** ✅ | Admin + upload ảnh: đổi trạng thái đơn, danh sách đơn/user cho admin, upload ảnh, dọn giỏ khi gỡ sản phẩm | `@PreAuthorize`, `MultipartFile`, máy trạng thái, Spring event |
 | **9** ✅ | Refresh token + đưa `role` vào payload token, hạ TTL, tự dọn token quá hạn — xem §3.4 | Token lifecycle, `SecureRandom`, rollback rule (`noRollbackFor`), `@Scheduled` |
 
-Sau bước 7 là đã đủ để FE chạy hoàn chỉnh với BE này. Sau bước 9, cả 29/29 endpoint ở §1.10 đã có. Hồi quy
-cuối (2026-10-07): 226/226 ca đạt — 101 ca phủ bước 3–9 kể cả 3 kịch bản chạy song song, 32 ca upload, 14 ca
-dọn giỏ, 79 ca riêng cho refresh token (phát, đổi kể cả đổi song song, thu hồi, `role` trong access token, job
-dọn token) — log không có dòng `ERROR` nào.
+Sau bước 7 là đã đủ để FE chạy hoàn chỉnh với BE này. Sau bước 9, cả 29/29 endpoint ở §1.10 đã có.
+
+**Dọn dẹp chốt v1** (sau bước 9): `409` khi hai request cùng lúc trùng ràng buộc `UNIQUE` (§1.6); chặn URL ảnh
+và mô tả sản phẩm vượt độ dài cột; secret chuyển sang biến môi trường và đổi secret mới (§10); tắt
+`open-in-view` (§6.4); rà toàn bộ tài liệu cho khớp code và schema thật (`DATABASE_DESIGN.md` mục 3).
+
+Hồi quy cuối của v1 (2026-10-09): 242/242 ca đạt — 101 ca phủ bước 3–9 kể cả 3 kịch bản chạy song song, 32
+ca upload, 14 ca dọn giỏ, 79 ca riêng cho refresh token (phát, đổi kể cả đổi song song, thu hồi, `role` trong
+access token, job dọn token), 16 ca cho `409` khi trùng `UNIQUE` và giới hạn độ dài — log không có dòng
+`ERROR` nào.
 
 ---
 

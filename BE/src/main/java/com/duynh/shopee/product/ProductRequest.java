@@ -20,34 +20,26 @@ import jakarta.validation.constraints.Size;
  * để bắt — lặng lẽ tạo ra sản phẩm tồn kho 0 thay vì báo lỗi.
  */
 public record ProductRequest(
-        @NotBlank(message = "Tên sản phẩm không được để trống")
-        @Size(max = 255, message = "Tên sản phẩm không được quá 255 kí tự")
-        String name,
+                @NotBlank(message = "Tên sản phẩm không được để trống") @Size(max = 255, message = "Tên sản phẩm không được quá 255 kí tự") String name,
 
-        /** Không bắt buộc, không giới hạn độ dài — cột TEXT. */
-        String description,
+                /** Không bắt buộc, cột TEXT chứa tối đa 65.535 byte; một kí tự UTF-8 chiếm tối đa 4 byte, nên giới hạn ≤ 16.383 kí tự là luôn vừa. */
+                @Size(max = 10000, message = "Mô tả sản phẩm không được quá 10000 kí tự") String description,
 
-        @NotNull(message = "Giá là bắt buộc")
-        @Positive(message = "Giá phải lớn hơn 0")
-        Long price,
+                @NotNull(message = "Giá là bắt buộc") @Positive(message = "Giá phải lớn hơn 0") Long price,
 
-        /** Giá gốc trước giảm. Null nghĩa là không giảm giá. */
-        @Positive(message = "Giá gốc phải lớn hơn 0")
-        Long priceBeforeDiscount,
+                /** Giá gốc trước giảm. Null nghĩa là không giảm giá. */
+                @Positive(message = "Giá gốc phải lớn hơn 0") Long priceBeforeDiscount,
 
-        @NotNull(message = "Số lượng là bắt buộc")
-        @PositiveOrZero(message = "Số lượng không được âm")
-        Integer quantity,
+                @NotNull(message = "Số lượng là bắt buộc") @PositiveOrZero(message = "Số lượng không được âm") Integer quantity,
 
-        @Size(max = 255, message = "Đường dẫn ảnh không được quá 255 kí tự")
-        String image,
+                @Size(max = 255, message = "Đường dẫn ảnh không được quá 255 kí tự") String image,
 
-        /**
-         * Album ảnh. @NotBlank nằm BÊN TRONG dấu ngoặc nhọn nên nó kiểm từng phần tử;
-         * đặt bên ngoài thì thành kiểm cả List, vốn không có nghĩa gì.
-         */
-        List<@NotBlank(message = "Đường dẫn ảnh không được để trống") String> images,
+                /**
+                 * Album ảnh. @NotBlank nằm BÊN TRONG dấu ngoặc nhọn nên nó kiểm từng phần tử;
+                 * đặt bên ngoài thì thành kiểm cả List, vốn không có nghĩa gì.
+                 */
 
-        @NotNull(message = "Vui lòng chọn danh mục")
-        Long categoryId) {
+                List<@Size(max = 255, message = "Đường dẫn ảnh không được quá 255 kí tự") @NotBlank(message = "Đường dẫn ảnh không được để trống") String> images,
+
+                @NotNull(message = "Vui lòng chọn danh mục") Long categoryId) {
 }
