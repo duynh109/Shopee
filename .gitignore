@@ -36,4 +36,7 @@ pnpm-debug.log*
 ### Claude Code ###
 .claude/settings.local.json
 
+### Playwright MCP (ảnh chụp, snapshot, log của phiên kiểm thử trình duyệt) ###
+.playwright-mcp/
+
 .env

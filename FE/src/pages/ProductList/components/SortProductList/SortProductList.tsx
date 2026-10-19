@@ -13,21 +13,21 @@ interface Props {
 
 export default function SortProductList({ queryConfig, pageSize }: Props) {
   const page = Number(queryConfig.page)
-  const { sort_by = sortBy.createdAt, order } = queryConfig
+  const { sortBy: currentSortBy = sortBy.createdAt, order } = queryConfig
   const navigate = useNavigate()
 
-  const isActiveSortBy = (sortByValue: Exclude<ProductListConfig['sort_by'], undefined>) => {
-    return sort_by === sortByValue
+  const isActiveSortBy = (sortByValue: Exclude<ProductListConfig['sortBy'], undefined>) => {
+    return currentSortBy === sortByValue
   }
 
-  const handleSort = (sortByValue: Exclude<ProductListConfig['sort_by'], undefined>) => {
+  const handleSort = (sortByValue: Exclude<ProductListConfig['sortBy'], undefined>) => {
     navigate({
       pathname: path.home,
       search: createSearchParams(
         omit(
           {
             ...queryConfig,
-            sort_by: sortByValue
+            sortBy: sortByValue
           },
           ['order']
         )
@@ -40,7 +40,7 @@ export default function SortProductList({ queryConfig, pageSize }: Props) {
       pathname: path.home,
       search: createSearchParams({
         ...queryConfig,
-        sort_by: sortBy.price,
+        sortBy: sortBy.price,
         order: orderValue
       }).toString()
     })

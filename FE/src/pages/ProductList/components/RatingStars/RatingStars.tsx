@@ -1,6 +1,6 @@
 import { createSearchParams, useNavigate } from 'react-router-dom'
 import path from '../../../../constants/path'
-import { QueryConfig } from '../../ProductList'
+import { QueryConfig } from '../../../../hooks/useQueryConfig'
 
 /**
  * index 0: Có 5 sao màu vàng tương ứng từ indexStar 0 - 4 đều màu vàng
@@ -24,7 +24,7 @@ export default function RatingStars({ queryConfig }: Props) {
       pathname: path.home,
       search: createSearchParams({
         ...queryConfig,
-        rating_filter: String(ratingFilter)
+        ratingFilter: String(ratingFilter)
       }).toString()
     })
   }

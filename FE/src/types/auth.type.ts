@@ -1,8 +1,8 @@
 import { User } from './user.type'
-import { SuccessResponse } from './utils.type'
 
-export type AuthResponse = SuccessResponse<{
-  access_token: string
-  expires: string
+export interface AuthResponse {
+  accessToken: string
+  expires: number
+  refreshToken: string
   user: User
-}>
+}

@@ -58,11 +58,11 @@ export const getRules = (getValues?: UseFormGetValues<any>): Rules => ({
 })
 
 function testPriceMinMax(this: yup.TestContext<yup.AnyObject>) {
-  const { price_min, price_max } = this.parent
-  if (price_min !== '' && price_max !== '') {
-    return Number(price_min) <= Number(price_max)
+  const { priceMin, priceMax } = this.parent
+  if (priceMin !== '' && priceMax !== '') {
+    return Number(priceMin) <= Number(priceMax)
   }
-  return price_min !== '' || price_max !== ''
+  return priceMin !== '' || priceMax !== ''
 }
 
 export const schema = yup.object({
@@ -83,12 +83,12 @@ export const schema = yup.object({
     .min(6, 'Độ dài từ 6-160 kí tự')
     .max(160, 'Độ dài từ 6-160 kí tự')
     .oneOf([yup.ref('password')], 'Nhập lại password không khớp '),
-  price_min: yup.string().test({
+  priceMin: yup.string().test({
     name: 'price-not-allowed',
     message: 'Giá không phù hợp',
     test: testPriceMinMax
   }),
-  price_max: yup.string().test({
+  priceMax: yup.string().test({
     name: 'price-not-allowed',
     message: 'Giá không phù hợp',
     test: testPriceMinMax

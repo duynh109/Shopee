@@ -97,6 +97,18 @@ curl -X POST http://localhost:8081/api/auth/register \
 
 Đăng ký luôn tạo tài khoản role `USER`. Muốn có admin thì `UPDATE users SET role='ADMIN' WHERE email=...`.
 
+**Dữ liệu mẫu.** Để giao diện có sản phẩm, đơn hàng, giỏ hàng trông như thật, chạy khi app đang chạy và DB còn trống:
+
+```bash
+pip install pillow
+python3 BE/scripts/seed.py
+```
+
+Script nạp 12 danh mục, 69 sản phẩm (207 ảnh, tải từ DummyJSON rồi upload qua API), 8 đơn ở đủ các trạng thái
+và 5 món trong giỏ, đi qua chính API của backend. Nó từ chối chạy nếu DB đã có dữ liệu. Tài khoản tạo ra, mật
+khẩu đều là `123456`: `admin@shopeeclone.vn` (ADMIN), `an.nguyen@gmail.com`, `linh.tran@gmail.com`,
+`minh.le@gmail.com`. Cần lệnh `mysql` trong PATH.
+
 ### Frontend
 
 ```bash

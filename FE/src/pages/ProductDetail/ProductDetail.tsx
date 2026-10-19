@@ -5,12 +5,18 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 import productApi from '../../apis/product.api'
 import ProductRating from '../../components/ProductRating'
-import { formatCurrency, formatNumberToSocialStyle, getIdFromNameId, rateSale } from '../../utils/utils'
+import {
+  formatCurrency,
+  formatNumberToSocialStyle,
+  getIdFromNameId,
+  isAxiosUnprocessableEntityError,
+  rateSale
+} from '../../utils/utils'
+import { ProblemDetail } from '../../types/utils.type'
 import { Product as ProductType, ProductListConfig } from '../../types/product.type'
 import Product from '../ProductList/components/Product'
 import QuantityController from '../../components/QuantityController'
-import purchaseApi from '../../apis/purchase.api'
-import { purchaseStatus } from '../../constants/purchase'
+import cartApi from '../../apis/cart.api'
 import { toast } from 'react-toastify'
 
 export default function ProductDetail() {
@@ -24,14 +30,14 @@ export default function ProductDetail() {
   })
   const [currentIndexImages, setCurrentIndexImages] = useState([0, 5])
   const [activeImage, setActiveImage] = useState('')
-  const product = productDetailData?.data.data
+  const product = productDetailData?.data
   const imageRef = useRef<HTMLImageElement>(null)
   const currentImages = useMemo(
     () => (product ? product.images.slice(...currentIndexImages) : []),
     [product, currentIndexImages]
   )
 
-  const queryConfig: ProductListConfig = { limit: '20', page: '1', category: product?.category._id }
+  const queryConfig: ProductListConfig = { limit: '20', page: '1', category: product?.category.id }
   const { data: productsData } = useQuery({
     queryKey: ['products', queryConfig],
     queryFn: () => {
@@ -42,7 +48,13 @@ export default function ProductDetail() {
   })
 
   const addToCartMutation = useMutation({
-    mutationFn: (body: { product_id: string; buy_count: number }) => purchaseApi.addToCart(body)
+    mutationFn: (body: { productId: string; quantity: number }) => cartApi.addToCart(body),
+    onError: (error) => {
+      // Interceptor không hiện toast cho 422, nên tự hiện. Vượt tồn kho: errors.quantity (API_SPEC §7.2)
+      if (isAxiosUnprocessableEntityError<ProblemDetail>(error)) {
+        toast.error(error.response?.data.errors?.quantity ?? error.response?.data.title)
+      }
+    }
   })
 
   useEffect(() => {
@@ -90,11 +102,11 @@ export default function ProductDetail() {
 
   const addToCart = () => {
     addToCartMutation.mutate(
-      { product_id: product?._id as string, buy_count: buyCount },
+      { productId: product?.id as string, quantity: buyCount },
       {
-        onSuccess: (data) => {
-          toast.success(data.data.message, { autoClose: 1000 })
-          queryClient.invalidateQueries({ queryKey: ['purchases', { status: purchaseStatus.inCart }] })
+        onSuccess: () => {
+          toast.success('Đã thêm sản phẩm vào giỏ hàng', { autoClose: 1000 })
+          queryClient.invalidateQueries({ queryKey: ['cart'] })
         }
       }
     )
@@ -189,9 +201,9 @@ export default function ProductDetail() {
               </div>
               <div className='mt-8 flex items-center bg-gray-50 px-5 py-4'>
                 <div className='text-3xl font-medium text-orange'>₫{formatCurrency(product.price)}</div>
-                <div className='ml-3 text-gray-500 line-through'>₫{formatCurrency(product.price_before_discount)}</div>
+                <div className='ml-3 text-gray-500 line-through'>₫{formatCurrency(product.priceBeforeDiscount)}</div>
                 <div className='ml-3 bg-orange/10 px-1 text-xs font-bold text-orange'>
-                  -{rateSale(product.price_before_discount, product.price)}%
+                  -{rateSale(product.priceBeforeDiscount, product.price)}%
                 </div>
               </div>
               <div className='mt-8 flex items-center'>
@@ -208,7 +220,8 @@ export default function ProductDetail() {
               <div className='mt-8 flex items-center'>
                 <button
                   onClick={addToCart}
-                  className='flex h-12 items-center justify-center rounded-sm border border-orange bg-orange/10 px-5 capitalize text-orange shadow-sm hover:bg-orange/5'
+                  disabled={addToCartMutation.isPending}
+                  className='flex h-12 items-center justify-center rounded-sm border border-orange bg-orange/10 px-5 capitalize text-orange shadow-sm hover:bg-orange/5 disabled:cursor-not-allowed disabled:opacity-60'
                 >
                   <img
                     alt='icon-add-to-cart'
@@ -238,8 +251,8 @@ export default function ProductDetail() {
           <div className='uppercase text-gray-400'>CÓ THỂ BẠN CŨNG THÍCH</div>
           {productsData && (
             <div className='mt-3 grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6'>
-              {productsData.data.data.products.map((product) => (
-                <div className='col-span-1' key={product._id}>
+              {productsData.data.items.map((product) => (
+                <div className='col-span-1' key={product.id}>
                   <Product product={product} />
                 </div>
               ))}

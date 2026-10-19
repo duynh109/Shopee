@@ -6,7 +6,7 @@ import { useMutation } from '@tanstack/react-query'
 import { schema, Schema } from '../../utils/rules'
 import authApi from '../../apis/auth.api'
 import { isAxiosUnprocessableEntityError } from '../../utils/utils'
-import { ErrorResponse } from '../../types/utils.type'
+import { ProblemDetail } from '../../types/utils.type'
 import Input from '../../components/Input'
 import { AppContext } from '../../contexts/app.context'
 import Button from '../../components/Button'
@@ -34,16 +34,16 @@ export default function Login() {
     loginAccountMutation.mutate(data, {
       onSuccess: (data) => {
         setIsAuthenticated(true)
-        setProfile(data.data.data.user)
+        setProfile(data.data.user)
         navigate('/')
       },
       onError: (error) => {
-        if (isAxiosUnprocessableEntityError<ErrorResponse<FormData>>(error)) {
-          const formError = error.response?.data.data
+        if (isAxiosUnprocessableEntityError<ProblemDetail>(error)) {
+          const formError = error.response?.data.errors
           if (formError) {
             Object.keys(formError).forEach((key) => {
               setError(key as keyof FormData, {
-                message: formError[key as keyof FormData],
+                message: formError[key],
                 type: 'Sever'
               })
             })

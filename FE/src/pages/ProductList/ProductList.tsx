@@ -33,18 +33,18 @@ export default function ProductList() {
         {productsData && (
           <div className='grid grid-cols-12 gap-6'>
             <div className='col-span-2'>
-              <AsideFilter queryConfig={queryConfig} categories={categoriesData?.data.data || []} />
+              <AsideFilter queryConfig={queryConfig} categories={categoriesData?.data || []} />
             </div>
             <div className='col-span-10'>
-              <SortProductList queryConfig={queryConfig} pageSize={productsData.data.data.pagination.page_size} />
+              <SortProductList queryConfig={queryConfig} pageSize={productsData.data.totalPages} />
               <div className='mt-6 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5'>
-                {productsData.data.data.products.map((product) => (
-                  <div className='col-span-1' key={product._id}>
+                {productsData.data.items.map((product) => (
+                  <div className='col-span-1' key={product.id}>
                     <Product product={product} />
                   </div>
                 ))}
               </div>
-              <Pagination queryConfig={queryConfig} pageSize={productsData.data.data.pagination.page_size} />
+              <Pagination queryConfig={queryConfig} pageSize={productsData.data.totalPages} />
             </div>
           </div>
         )}

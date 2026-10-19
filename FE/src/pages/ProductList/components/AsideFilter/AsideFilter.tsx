@@ -18,15 +18,15 @@ interface Props {
   categories: Category[]
 }
 
-type FormData = NoUndefinedField<Pick<Schema, 'price_max' | 'price_min'>>
+type FormData = NoUndefinedField<Pick<Schema, 'priceMax' | 'priceMin'>>
 
 /**
  * Rule validate
- * Nếu có price_min thì price_max thì price_max >= price_min
- * Còn không thì có price_min thì không có price_max và ngược lại
+ * Nếu có priceMin thì priceMax thì priceMax >= priceMin
+ * Còn không thì có priceMin thì không có priceMax và ngược lại
  */
 
-const priceSchema = schema.pick(['price_min', 'price_max'])
+const priceSchema = schema.pick(['priceMin', 'priceMax'])
 
 export default function AsideFilter({ queryConfig, categories }: Props) {
   const { category } = queryConfig
@@ -37,8 +37,8 @@ export default function AsideFilter({ queryConfig, categories }: Props) {
     formState: { errors }
   } = useForm<FormData>({
     defaultValues: {
-      price_min: '',
-      price_max: ''
+      priceMin: '',
+      priceMax: ''
     },
     resolver: yupResolver<FormData>(priceSchema as ObjectSchema<FormData>),
     shouldFocusError: false
@@ -52,8 +52,8 @@ export default function AsideFilter({ queryConfig, categories }: Props) {
       pathname: path.home,
       search: createSearchParams({
         ...queryConfig,
-        price_max: data.price_max,
-        price_min: data.price_min
+        priceMax: data.priceMax,
+        priceMin: data.priceMin
       }).toString()
     })
   })
@@ -61,7 +61,7 @@ export default function AsideFilter({ queryConfig, categories }: Props) {
   const handleRemoveAll = () => {
     navigate({
       pathname: path.home,
-      search: createSearchParams(omit(queryConfig, ['price_min', 'price_max', 'rating_filter', 'category'])).toString()
+      search: createSearchParams(omit(queryConfig, ['priceMin', 'priceMax', 'ratingFilter', 'category'])).toString()
     })
   }
 
@@ -91,15 +91,15 @@ export default function AsideFilter({ queryConfig, categories }: Props) {
       <div className='mb-[10px] mt-[18px] h-[1px] bg-gray-300' />
       <ul className='text-sm'>
         {categories.map((categoryItem) => {
-          const isActive = category === categoryItem._id
+          const isActive = category === categoryItem.id
           return (
-            <li className='py-2 pl-2' key={categoryItem._id}>
+            <li className='py-2 pl-2' key={categoryItem.id}>
               <Link
                 to={{
                   pathname: path.home,
                   search: createSearchParams({
                     ...queryConfig,
-                    category: categoryItem._id
+                    category: categoryItem.id
                   }).toString()
                 }}
                 className={classNames('relative px-1', {
@@ -143,7 +143,7 @@ export default function AsideFilter({ queryConfig, categories }: Props) {
           <div className='flex items-start'>
             {/* <Controller
               control={control}
-              name='price_min'
+              name='priceMin'
               render={({ field }) => {
                 return (
                   <InputNumber
@@ -155,7 +155,7 @@ export default function AsideFilter({ queryConfig, categories }: Props) {
                     {...field}
                     onChange={(event) => {
                       field.onChange(event)
-                      trigger('price_max')
+                      trigger('priceMax')
                     }}
                   />
                 )
@@ -164,21 +164,21 @@ export default function AsideFilter({ queryConfig, categories }: Props) {
 
             <InputV2
               control={control}
-              name='price_min'
+              name='priceMin'
               type='number'
               className='w-20 grow text-xs'
               placeholder='₫ TỪ'
               classNameInput='p-1 w-full outline-none border border-gray-300 focus:border-gray-500 rounded-sm focus:shadow-sm'
               classNameError='hidden'
               onChange={() => {
-                trigger('price_max')
+                trigger('priceMax')
               }}
             />
 
             <div className='mx-2 mt-[2px] shrink-0'>-</div>
             <Controller
               control={control}
-              name='price_max'
+              name='priceMax'
               render={({ field }) => {
                 return (
                   <InputNumber
@@ -190,14 +190,14 @@ export default function AsideFilter({ queryConfig, categories }: Props) {
                     {...field}
                     onChange={(event) => {
                       field.onChange(event)
-                      trigger('price_min')
+                      trigger('priceMin')
                     }}
                   />
                 )
               }}
             />
           </div>
-          <div className='mt-1 min-h-[1.25rem] text-center text-sm text-red-600'>{errors.price_min?.message}</div>
+          <div className='mt-1 min-h-[1.25rem] text-center text-sm text-red-600'>{errors.priceMin?.message}</div>
           <Button className='flex w-full items-center justify-center rounded-sm bg-orange p-2 text-sm uppercase text-white shadow-sm hover:bg-orange/80'>
             Áp dụng
           </Button>

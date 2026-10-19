@@ -8,7 +8,7 @@ import Input from '../../components/Input'
 import { schema, Schema } from '../../utils/rules'
 import authApi from '../../apis/auth.api'
 import { isAxiosUnprocessableEntityError } from '../../utils/utils'
-import { ErrorResponse } from '../../types/utils.type'
+import { ProblemDetail } from '../../types/utils.type'
 import { AppContext } from '../../contexts/app.context'
 import Button from '../../components/Button'
 
@@ -36,16 +36,16 @@ export default function Register() {
     registerAccountMutation.mutate(body, {
       onSuccess: (data) => {
         setIsAuthenticated(true)
-        setProfile(data.data.data.user)
+        setProfile(data.data.user)
         navigate('/')
       },
       onError: (error) => {
-        if (isAxiosUnprocessableEntityError<ErrorResponse<Omit<FormData, 'confirm_password'>>>(error)) {
-          const formError = error.response?.data.data
+        if (isAxiosUnprocessableEntityError<ProblemDetail>(error)) {
+          const formError = error.response?.data.errors
           if (formError) {
             Object.keys(formError).forEach((key) => {
               setError(key as keyof Omit<FormData, 'confirm_password'>, {
-                message: formError[key as keyof Omit<FormData, 'confirm_password'>],
+                message: formError[key],
                 type: 'Sever'
               })
             })

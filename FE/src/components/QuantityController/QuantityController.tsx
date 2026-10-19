@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import classNames from 'classnames'
 import InputNumber, { InputNumberProps } from '../InputNumber'
 
 interface Props extends InputNumberProps {
@@ -14,7 +15,7 @@ export default function QuantityController({
   onIncrease,
   onDecrease,
   onType,
-  classNameWrapper = 'ml-10 ',
+  classNameWrapper = '',
   value,
   ...rest
 }: Props) {
@@ -55,7 +56,7 @@ export default function QuantityController({
   }
 
   return (
-    <div className={'flex items-center' + classNameWrapper}>
+    <div className={classNames('flex items-center', classNameWrapper)}>
       <button
         className='flex size-8 items-center justify-center rounded-l-sm border border-gray-300 text-gray-600'
         onClick={decrease}

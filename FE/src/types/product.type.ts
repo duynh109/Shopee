@@ -1,41 +1,36 @@
-export interface Product {
-  _id: string
-  images: string[]
+import { Category } from './category.type'
+
+// Dạng rút gọn — GET /api/products và product lồng trong dòng giỏ hàng
+export interface ProductSummary {
+  id: string
+  name: string
+  image: string
   price: number
-  rating: number
-  price_before_discount: number
+  priceBeforeDiscount: number
   quantity: number
   sold: number
   view: number
-  name: string
-  description: string
-  category: {
-    _id: string
-    name: string
-  }
-  image: string
+  rating: number
+  category: Category
   createdAt: string
   updatedAt: string
 }
 
-export interface ProductList {
-  products: Product[]
-  pagination: {
-    page: number
-    limit: number
-    page_size: number
-  }
+// Dạng đầy đủ — GET /api/products/{id}: thêm album ảnh và mô tả HTML
+export interface Product extends ProductSummary {
+  images: string[]
+  description: string
 }
 
 export interface ProductListConfig {
   page?: number | string
   limit?: number | string
-  sort_by?: 'createdAt' | 'view' | 'sold' | 'price'
+  sortBy?: 'createdAt' | 'view' | 'sold' | 'price'
   order?: 'asc' | 'desc'
   exclude?: string
-  rating_filter?: number | string
-  price_max?: number | string
-  price_min?: number | string
+  ratingFilter?: number | string
+  priceMax?: number | string
+  priceMin?: number | string
   name?: string
   category?: string
 }

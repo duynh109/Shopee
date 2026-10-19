@@ -1,11 +1,18 @@
-export interface SuccessResponse<Data> {
-  message: string
-  data: Data
+export interface Paginated<T> {
+  items: T[]
+  page: number
+  limit: number
+  totalItems: number
+  totalPages: number
 }
 
-export interface ErrorResponse<Data> {
-  message: string
-  data?: Data
+// RFC 9457 — hình dạng chung của MỌI response lỗi
+export interface ProblemDetail {
+  type: string
+  title: string
+  status: number
+  detail?: string
+  errors?: Record<string, string>
 }
 
 // Cú pháp '-?' để loại bỏ undefined của key optional
