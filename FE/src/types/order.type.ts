@@ -34,3 +34,18 @@ export interface Order {
   createdAt: string
   updatedAt: string
 }
+
+export interface CreateOrderBody {
+  cartItemIds: string[]
+  recipientName: string
+  recipientPhone: string
+  shippingAddress: string
+  paymentMethod: PaymentMethod
+  note?: string
+}
+
+export interface OrderListConfig {
+  status?: OrderStatus
+  page?: number
+  limit?: number
+}

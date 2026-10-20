@@ -65,6 +65,8 @@ function testPriceMinMax(this: yup.TestContext<yup.AnyObject>) {
   return priceMin !== '' || priceMax !== ''
 }
 
+const PHONE_REGEX = /^0\d{9,10}$/
+
 export const schema = yup.object({
   email: yup
     .string()
@@ -93,7 +95,13 @@ export const schema = yup.object({
     message: 'Giá không phù hợp',
     test: testPriceMinMax
   }),
-  name: yup.string().trim().required('Tên sản phẩm là bắt buộc')
+  name: yup.string().trim().required('Tên sản phẩm là bắt buộc'),
+  recipientName: yup.string().trim().required('Tên người nhận là bắt buộc').max(255, 'Tối đa 255 kí tự'),
+  recipientPhone: yup.string().required('Số điện thoại là bắt buộc').matches(PHONE_REGEX, 'Số điện thoại không hợp lệ'),
+  shippingAddress: yup.string().trim().required('Địa chỉ giao hàng là bắt buộc').max(255, 'Tối đa 255 kí tự'),
+  // Không có .required: ghi chú là tuỳ chọn, nên kiểu suy ra là string | undefined
+  note: yup.string().trim().max(500, 'Tối đa 500 kí tự'),
+  cancelledReason: yup.string().trim().required('Vui lòng nhập lý do huỷ đơn').max(255, 'Tối đa 255 kí tự')
 })
 
 export type Schema = yup.InferType<typeof schema>

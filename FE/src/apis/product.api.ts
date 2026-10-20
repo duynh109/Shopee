@@ -5,9 +5,9 @@ import http from '../utils/http'
 const URL = 'products'
 
 const productApi = {
-  getProducts(params: ProductListConfig) {
+  getProducts(config: ProductListConfig) {
     return http.get<Paginated<ProductSummary>>(URL, {
-      params
+      params: config
     })
   },
   getProductDetail(id: string) {

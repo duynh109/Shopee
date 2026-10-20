@@ -39,3 +39,7 @@ export const getIdFromNameId = (nameId: string) => {
   const arr = nameId.split('-i.')
   return arr[arr.length - 1]
 }
+
+// BE trả thời gian dạng ISO (UTC); hiển thị theo giờ của máy người dùng
+export const formatDateTime = (iso: string) =>
+  new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(iso))
