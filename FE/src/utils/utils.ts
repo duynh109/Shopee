@@ -27,6 +27,11 @@ export const rateSale = (original: number, sale: number) => {
   return Math.round(((original - sale) / original) * 100)
 }
 
+// Sản phẩm không giảm giá thì BE trả priceBeforeDiscount = null (cột DB cho phép NULL). Chỉ khi có giá gốc và nó cao hơn
+// giá bán mới đáng hiện giá gạch và "-x%". Là type guard nên bên trong nhánh true, TypeScript biết giá gốc là number
+export const hasDiscount = (priceBeforeDiscount: number | null, price: number): priceBeforeDiscount is number =>
+  priceBeforeDiscount !== null && priceBeforeDiscount > price
+
 export const removeSpecialCharacter = (str: string) =>
   // eslint-disable-next-line no-useless-escape
   str.replace(/!|@|%|\^|\*|\(|\)|\+|\=|\<|\>|\?|\/|,|\.|\:|\;|\'|\"|\&|\#|\[|\]|~|\$|_|`|-|{|}|\||\\/g, '')

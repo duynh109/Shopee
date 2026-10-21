@@ -29,7 +29,7 @@ export default function Checkout() {
   // duyệt chứ không trên URL, nên tải lại trang vẫn còn, nhưng gõ thẳng /checkout thì không có.
   const cartItemIds = (location.state as { cartItemIds?: string[] } | null)?.cartItemIds
 
-  const { data: cartData } = useQuery({ queryKey: ['cart'], queryFn: cartApi.getCart })
+  const { data: cartData, isFetching } = useQuery({ queryKey: ['cart'], queryFn: cartApi.getCart })
   // Chỉ lấy các dòng giỏ có trong danh sách đã chọn. Đọc từ giỏ (cache dùng chung với trang Giỏ hàng) chứ không
   // truyền cả dòng qua state, để giá và tồn kho luôn là bản mới nhất.
   const items = (cartData?.data ?? []).filter((item) => cartItemIds?.includes(item.id))
@@ -56,8 +56,10 @@ export default function Checkout() {
   // Hook (useState, useQuery, useForm, useMutation...) phải được gọi theo cùng một thứ tự ở MỌI lần render, nên mọi
   // câu lệnh `return` sớm đều nằm SAU các hook ở trên. Đặt return trước hook thì React báo lỗi hoặc chạy sai.
   if (!cartItemIds || cartItemIds.length === 0) return <Navigate to={path.cart} replace />
-  // Giỏ đã tải xong mà không còn dòng nào trong số đã chọn (đã bị xoá ở tab khác...): quay về giỏ
-  if (cartData && items.length === 0) return <Navigate to={path.cart} replace />
+  // Giỏ đã tải xong mà không còn dòng nào trong số đã chọn (đã bị xoá ở tab khác...): quay về giỏ.
+  // Phải đợi `!isFetching`: cache giỏ có thể còn cũ (chưa có dòng vừa thêm bằng "Mua ngay") và đang được tải lại;
+  // nhìn cache cũ mà kết luận "giỏ trống" thì sẽ đẩy người dùng đi oan.
+  if (cartData && !isFetching && items.length === 0) return <Navigate to={path.cart} replace />
 
   const onSubmit = handleSubmit((data) => {
     createOrderMutation.mutate(

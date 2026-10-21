@@ -465,7 +465,7 @@ chưa đăng nhập không dò được API có những đường dẫn nào. C�
 | `image` | Ảnh bìa | Admin **chọn** ảnh nào làm bìa — không phải `images[0]`, để đổi thứ tự album không làm đổi bìa |
 | `images[]` | Album ảnh | Slider ở trang chi tiết; nên chứa cả `image`. **Chỉ có ở dạng đầy đủ** |
 | `price` | Giá bán hiện tại | |
-| `priceBeforeDiscount` | Giá gốc | FE tính % giảm = `(before - price) / before` |
+| `priceBeforeDiscount` | Giá gốc | **`null` nếu sản phẩm không giảm giá** (cột DB cho phép NULL, admin được bỏ trống). BE không bắt buộc nó ≥ `price`. FE chỉ hiện giá gạch và % giảm khi có giá gốc **và** nó cao hơn `price`; % giảm = `(before - price) / before` |
 | `quantity` | Tồn kho | Dùng để chặn không cho mua quá số này |
 | `rating` | Điểm trung bình 0–5 | v1 để số tĩnh, tính thật khi có `reviews` |
 | `description` | **HTML**, tối đa 10.000 kí tự | FE sanitize trước khi render. Giới hạn đếm theo `String.length()` của Java — emoji tính 2 — và vì sao là 10.000: `DATABASE_DESIGN.md` §3.3 |
@@ -579,7 +579,7 @@ Công thức: `totalAmount = subtotal + shippingFee - discount`. v1 để `shipp
 ```
 
 Tên, ảnh và giá là **bản sao tại thời điểm đặt hàng**, không đọc động từ `products`. Giữ `productId` chỉ
-để có đường dẫn quay về trang sản phẩm.
+để có đường dẫn quay về trang sản phẩm. `priceBeforeDiscount` được sao nguyên từ sản phẩm nên cũng có thể là `null`.
 
 ---
 

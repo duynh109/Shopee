@@ -1,6 +1,12 @@
 import { Link } from 'react-router-dom'
 import { ProductSummary } from '../../../../types/product.type'
-import { formatCurrency, formatNumberToSocialStyle, generateNameId, rateSale } from '../../../../utils/utils'
+import {
+  formatCurrency,
+  formatNumberToSocialStyle,
+  generateNameId,
+  hasDiscount,
+  rateSale
+} from '../../../../utils/utils'
 import ProductRating from '../../../../components/ProductRating'
 import path from '../../../../constants/path'
 
@@ -26,14 +32,18 @@ export default function Product({ product }: Props) {
               <span className='text-xs'>₫</span>
               <span className='text-base'>{formatCurrency(product.price)}</span>
             </div>
-            <div className='max-w-[50%] truncate text-sm text-gray-500 line-through'>
-              ₫{formatCurrency(product.priceBeforeDiscount)}
-            </div>
-            <div className='ml-1 bg-[#feeeea] p-[0.125rem]'>
-              <span className='block text-[0.625rem] leading-[0.75rem] text-orange'>
-                -{rateSale(product.priceBeforeDiscount, product.price)}%
-              </span>
-            </div>
+            {hasDiscount(product.priceBeforeDiscount, product.price) && (
+              <>
+                <div className='max-w-[50%] truncate text-sm text-gray-500 line-through'>
+                  ₫{formatCurrency(product.priceBeforeDiscount)}
+                </div>
+                <div className='ml-1 bg-[#feeeea] p-[0.125rem]'>
+                  <span className='block text-[0.625rem] leading-[0.75rem] text-orange'>
+                    -{rateSale(product.priceBeforeDiscount, product.price)}%
+                  </span>
+                </div>
+              </>
+            )}
           </div>
           <div className='mt-3 flex items-center'>
             <ProductRating rating={product.rating} />

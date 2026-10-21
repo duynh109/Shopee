@@ -10,7 +10,7 @@ import path from '../../constants/path'
 import noproduct from '../../assets/images/no-product.png'
 import { CartItem } from '../../types/cart.type'
 import { ProblemDetail } from '../../types/utils.type'
-import { formatCurrency, generateNameId, isAxiosUnprocessableEntityError } from '../../utils/utils'
+import { formatCurrency, generateNameId, hasDiscount, isAxiosUnprocessableEntityError } from '../../utils/utils'
 
 export default function Cart() {
   const queryClient = useQueryClient()
@@ -60,10 +60,11 @@ export default function Cart() {
   const checkedItems = items.filter((item) => checkedIds.includes(item.id))
   const isAllChecked = items.length > 0 && checkedItems.length === items.length
   const totalPrice = checkedItems.reduce((sum, item) => sum + item.product.price * item.quantity, 0)
-  const totalSaved = checkedItems.reduce(
-    (sum, item) => sum + (item.product.priceBeforeDiscount - item.product.price) * item.quantity,
-    0
-  )
+  // Sản phẩm không giảm giá (giá gốc null) thì không tiết kiệm được đồng nào, chứ không phải 0 - giá = số âm
+  const totalSaved = checkedItems.reduce((sum, item) => {
+    const { priceBeforeDiscount, price } = item.product
+    return sum + (hasDiscount(priceBeforeDiscount, price) ? priceBeforeDiscount - price : 0) * item.quantity
+  }, 0)
 
   const handleCheck = (id: string) => {
     setCheckedIds((prev) => (prev.includes(id) ? prev.filter((checkedId) => checkedId !== id) : [...prev, id]))
@@ -179,10 +180,12 @@ export default function Cart() {
                           <div className='grid grid-cols-5 items-center'>
                             <div className='col-span-2'>
                               <div className='flex items-center justify-center'>
-                                <span className='text-gray-300 line-through'>
-                                  ₫{formatCurrency(item.product.priceBeforeDiscount)}
-                                </span>
-                                <span className='ml-3'>₫{formatCurrency(item.product.price)}</span>
+                                {hasDiscount(item.product.priceBeforeDiscount, item.product.price) && (
+                                  <span className='mr-3 text-gray-300 line-through'>
+                                    ₫{formatCurrency(item.product.priceBeforeDiscount)}
+                                  </span>
+                                )}
+                                <span>₫{formatCurrency(item.product.price)}</span>
                               </div>
                             </div>
                             <div className='col-span-1'>

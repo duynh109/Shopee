@@ -11,7 +11,7 @@ import { cancellableStatuses, orderStatus, purchaseTabs } from '../../constants/
 import path from '../../constants/path'
 import useQueryParams from '../../hooks/useQueryParams'
 import { Order, OrderStatus } from '../../types/order.type'
-import { formatCurrency, generateNameId } from '../../utils/utils'
+import { formatCurrency, generateNameId, hasDiscount } from '../../utils/utils'
 
 // Giá trị trên URL là string bất kỳ người dùng gõ vào. Chỉ chấp nhận 5 trạng thái hợp lệ, còn lại coi như
 // "tất cả": gửi `?status=abc` lên BE sẽ bị 400 và hiện toast lỗi.
@@ -82,7 +82,9 @@ export default function Purchase() {
                   <div className='mt-1 text-gray-500'>x{item.quantity}</div>
                 </div>
                 <div className='ml-3 flex-shrink-0 text-right'>
-                  <span className='mr-2 text-gray-300 line-through'>₫{formatCurrency(item.priceBeforeDiscount)}</span>
+                  {hasDiscount(item.priceBeforeDiscount, item.price) && (
+                    <span className='mr-2 text-gray-300 line-through'>₫{formatCurrency(item.priceBeforeDiscount)}</span>
+                  )}
                   <span className='text-orange'>₫{formatCurrency(item.price)}</span>
                 </div>
               </div>

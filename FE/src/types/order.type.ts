@@ -11,7 +11,7 @@ export interface OrderItem {
   productName: string
   productImage: string
   price: number
-  priceBeforeDiscount: number
+  priceBeforeDiscount: number | null
   quantity: number
 }
 

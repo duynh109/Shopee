@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import DOMPurify from 'dompurify'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useContext, useEffect, useMemo, useRef, useState } from 'react'
 
 import productApi from '../../apis/product.api'
 import ProductRating from '../../components/ProductRating'
@@ -9,6 +9,7 @@ import {
   formatCurrency,
   formatNumberToSocialStyle,
   getIdFromNameId,
+  hasDiscount,
   isAxiosUnprocessableEntityError,
   rateSale
 } from '../../utils/utils'
@@ -17,10 +18,22 @@ import { Product as ProductType, ProductListConfig } from '../../types/product.t
 import Product from '../ProductList/components/Product'
 import QuantityController from '../../components/QuantityController'
 import cartApi from '../../apis/cart.api'
+import path from '../../constants/path'
+import { AppContext } from '../../contexts/app.context'
 import { toast } from 'react-toastify'
 
+// key={nameId}: bấm sang sản phẩm khác (mục "Có thể bạn cũng thích") thì route vẫn là một, chỉ đổi :nameId, nên React giữ
+// nguyên component và state cũ (số lượng đã chọn, vị trí slider ảnh) bị mang sang sản phẩm mới — có thể vượt tồn kho
+// của nó. Đổi key buộc React dựng lại component từ đầu, mọi state về giá trị ban đầu mà không cần useEffect reset tay
 export default function ProductDetail() {
+  const { nameId } = useParams()
+  return <ProductDetailContent key={nameId} />
+}
+
+function ProductDetailContent() {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
+  const { isAuthenticated } = useContext(AppContext)
   const [buyCount, setBuyCount] = useState(1)
   const { nameId } = useParams()
   const id = getIdFromNameId(nameId as string)
@@ -37,7 +50,13 @@ export default function ProductDetail() {
     [product, currentIndexImages]
   )
 
-  const queryConfig: ProductListConfig = { limit: '20', page: '1', category: product?.category.id }
+  // `exclude` loại chính sản phẩm đang xem khỏi danh sách "sản phẩm tương tự" (API_SPEC §5.1)
+  const queryConfig: ProductListConfig = {
+    limit: '20',
+    page: '1',
+    category: product?.category.id,
+    exclude: product?.id
+  }
   const { data: productsData } = useQuery({
     queryKey: ['products', queryConfig],
     queryFn: () => {
@@ -62,7 +81,6 @@ export default function ProductDetail() {
   }, [product])
 
   const next = () => {
-    console.log(currentIndexImages[1])
     if (currentIndexImages[1] < (product as ProductType).images.length) {
       setCurrentIndexImages((prev) => [prev[0] + 1, prev[1] + 1])
     }
@@ -100,13 +118,39 @@ export default function ProductDetail() {
     setBuyCount(value)
   }
 
+  // Trang sản phẩm là công khai nên người chưa đăng nhập vẫn thấy hai nút mua. Chặn ở đây thay vì gọi API: BE sẽ trả
+  // 401 và interceptor hiểu đó là "phiên hết hạn" (hiện toast sai, vì họ chưa từng có phiên). Trả về true nếu đã chặn.
+  const redirectToLoginIfNeeded = () => {
+    if (isAuthenticated) return false
+    toast.info('Vui lòng đăng nhập để mua hàng')
+    navigate(path.login)
+    return true
+  }
+
   const addToCart = () => {
+    if (redirectToLoginIfNeeded()) return
     addToCartMutation.mutate(
       { productId: product?.id as string, quantity: buyCount },
       {
         onSuccess: () => {
           toast.success('Đã thêm sản phẩm vào giỏ hàng', { autoClose: 1000 })
           queryClient.invalidateQueries({ queryKey: ['cart'] })
+        }
+      }
+    )
+  }
+
+  // Mua ngay = thêm vào giỏ rồi sang thẳng trang đặt hàng chỉ với dòng giỏ vừa thêm.
+  // Lưu ý: sản phẩm đã có trong giỏ thì BE cộng dồn vào dòng cũ, nên đơn lấy theo số lượng SAU khi cộng.
+  const buyNow = () => {
+    if (redirectToLoginIfNeeded()) return
+    addToCartMutation.mutate(
+      { productId: product?.id as string, quantity: buyCount },
+      {
+        onSuccess: async (response) => {
+          // Chờ giỏ tải lại xong rồi mới chuyển trang, để trang đặt hàng đã có sẵn dòng vừa thêm trong cache
+          await queryClient.invalidateQueries({ queryKey: ['cart'] })
+          navigate(path.checkout, { state: { cartItemIds: [response.data.id] } })
         }
       }
     )
@@ -201,10 +245,16 @@ export default function ProductDetail() {
               </div>
               <div className='mt-8 flex items-center bg-gray-50 px-5 py-4'>
                 <div className='text-3xl font-medium text-orange'>₫{formatCurrency(product.price)}</div>
-                <div className='ml-3 text-gray-500 line-through'>₫{formatCurrency(product.priceBeforeDiscount)}</div>
-                <div className='ml-3 bg-orange/10 px-1 text-xs font-bold text-orange'>
-                  -{rateSale(product.priceBeforeDiscount, product.price)}%
-                </div>
+                {hasDiscount(product.priceBeforeDiscount, product.price) && (
+                  <>
+                    <div className='ml-3 text-gray-500 line-through'>
+                      ₫{formatCurrency(product.priceBeforeDiscount)}
+                    </div>
+                    <div className='ml-3 bg-orange/10 px-1 text-xs font-bold text-orange'>
+                      -{rateSale(product.priceBeforeDiscount, product.price)}%
+                    </div>
+                  </>
+                )}
               </div>
               <div className='mt-8 flex items-center'>
                 <div className='mr-12 text-gray-500'>Số Lượng</div>
@@ -230,7 +280,11 @@ export default function ProductDetail() {
                   ></img>
                   Thêm vào giỏ hàng
                 </button>
-                <button className='ml-4 flex h-12 min-w-[5rem] items-center justify-center rounded-sm bg-orange px-10 capitalize text-white shadow-sm outline-none hover:bg-orange/90'>
+                <button
+                  onClick={buyNow}
+                  disabled={addToCartMutation.isPending}
+                  className='ml-4 flex h-12 min-w-[5rem] items-center justify-center rounded-sm bg-orange px-10 capitalize text-white shadow-sm outline-none hover:bg-orange/90 disabled:cursor-not-allowed disabled:opacity-60'
+                >
                   Mua ngay
                 </button>
               </div>

@@ -6,7 +6,7 @@ export interface ProductSummary {
   name: string
   image: string
   price: number
-  priceBeforeDiscount: number
+  priceBeforeDiscount: number | null
   quantity: number
   sold: number
   view: number

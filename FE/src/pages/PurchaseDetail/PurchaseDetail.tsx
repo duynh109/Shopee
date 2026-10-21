@@ -6,7 +6,7 @@ import CancelOrderDialog from '../../components/CancelOrderDialog'
 import OrderStatusBadge from '../../components/OrderStatusBadge'
 import { cancellableStatuses, paymentMethodLabel, paymentStatusLabel } from '../../constants/order'
 import path from '../../constants/path'
-import { formatCurrency, formatDateTime, generateNameId } from '../../utils/utils'
+import { formatCurrency, formatDateTime, generateNameId, hasDiscount } from '../../utils/utils'
 
 export default function PurchaseDetail() {
   // :id lấy từ đường dẫn /user/purchase/:id (useParams luôn trả string | undefined)
@@ -16,10 +16,8 @@ export default function PurchaseDetail() {
   const { data: orderData, isError } = useQuery({
     queryKey: ['order', id],
     queryFn: () => orderApi.getOrder(id as string),
-    enabled: Boolean(id),
-    // Mặc định React Query thử lại 3 lần khi lỗi (cách nhau 1s, 2s, 4s). Với 404 thử lại vô ích: đơn của người
-    // khác hay không tồn tại thì lần nào cũng 404, màn hình chờ cả chục giây và hiện bốn toast liền nhau.
-    retry: false
+    // Đơn của người khác hay không tồn tại thì BE trả 404; quy tắc retry chung ở main.tsx không thử lại lỗi 4xx
+    enabled: Boolean(id)
   })
   const order = orderData?.data
 
@@ -75,7 +73,9 @@ export default function PurchaseDetail() {
                 <div className='mt-1 text-gray-500'>x{item.quantity}</div>
               </div>
               <div className='ml-3 flex-shrink-0 text-right'>
-                <span className='mr-2 text-gray-300 line-through'>₫{formatCurrency(item.priceBeforeDiscount)}</span>
+                {hasDiscount(item.priceBeforeDiscount, item.price) && (
+                  <span className='mr-2 text-gray-300 line-through'>₫{formatCurrency(item.priceBeforeDiscount)}</span>
+                )}
                 <span className='text-orange'>₫{formatCurrency(item.price)}</span>
               </div>
             </div>
