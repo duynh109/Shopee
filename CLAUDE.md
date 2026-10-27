@@ -10,7 +10,7 @@ FE/     React + TypeScript + Vite — port 3000
 
 | File | Nội dung |
 |---|---|
-| `docs/API_SPEC.md` | Contract API giữa BE và FE. **§1.10 là bảng quyền chính thức**: cả 29 endpoint, ai gọi được, đã làm chưa, và **màn FE nào gọi tới** kèm route của màn đó. §11 là lộ trình 9 bước. |
+| `docs/API_SPEC.md` | Contract API giữa BE và FE. **§1.10 là bảng quyền chính thức**: cả 29 endpoint, ai gọi được, đã làm chưa, và **màn FE nào gọi tới** kèm route của màn đó. §11 là lộ trình 9 bước. §12 ghi cách FE nối với API. |
 | `docs/DATABASE_DESIGN.md` | Schema v1 (8 bảng) và lý do đằng sau từng quyết định |
 | `docs/SYSTEM_DESIGN.md` | Lộ trình mở rộng, chưa cần cho v1 |
 
@@ -22,9 +22,9 @@ khi làm gì — đừng suy ra tiến độ từ code, và khi làm xong một 
 
 ## Thứ tự làm việc
 
-**Làm BE cho đúng và đầy đủ trước, FE sửa sau.** BE v1 đã xong (§11); việc tiếp theo là sửa FE. FE hiện vẫn
-gọi contract API cũ (`{message, data}`, field `snake_case`); danh sách việc cần sửa ở FE nằm ở
-`docs/API_SPEC.md` §12. Đừng viết thêm code FE theo contract cũ đó.
+**Làm BE cho đúng và đầy đủ trước, FE sửa sau.** BE v1 và FE cho người mua đều đã xong: FE gọi đúng contract
+mới (DTO trần, field `camelCase`, lỗi `ProblemDetail`). Chưa có màn admin (§1.10 ⁶). `docs/API_SPEC.md` §12 ghi
+cách FE nối với API. Thêm hay đổi API thì cập nhật cột "Màn FE" ở §1.10 cùng lúc.
 
 ## Quy ước dễ sai
 
@@ -51,6 +51,13 @@ gọi contract API cũ (`{message, data}`, field `snake_case`); danh sách việ
   Quên `@Transactional` ở một hàm đọc có quan hệ lazy thì nhận `LazyInitializationException` → `500`.
 - **Secret không bao giờ ghi vào `application.properties`** — file đó chỉ có `${JWT_SECRET}`, `${DB_PASSWORD}`,
   không giá trị mặc định. Giá trị thật ở `BE/.env` (gitignore). Không in nội dung `.env` ra terminal hay chat.
+- **FE: `priceBeforeDiscount` có thể `null`** (sản phẩm và dòng đơn hàng; `null` = không giảm giá). Dùng
+  `hasDiscount()` ở `FE/src/utils/utils.ts` trước khi hiện giá gạch hay `-x%`: `formatCurrency(null)` ra `₫0` còn
+  `rateSale` ra `-Infinity`.
+- **FE: upload file phải khai `Content-Type: multipart/form-data` ngay ở request.** Instance axios đặt sẵn
+  `application/json`, gặp header đó axios biến `FormData` thành chuỗi JSON và BE trả `415`.
+- **FE: cùng một route mà khác tham số thì React không dựng lại component**, nên state cũ (số lượng đã chọn, vị
+  trí slider ảnh) bị mang sang sản phẩm mới. Bọc bằng component có `key={tham số}`, xem `ProductDetail`.
 
 ## Chạy
 
@@ -62,11 +69,16 @@ cd BE && ./mvnw clean compile            # kiểm tra compile thật
 
 # FE
 cd FE && npm run dev
+cd FE && npm run build                   # tsc -b + vite build
+cd FE && npm run lint
 ```
 
 > Compiler của VSCode Java extension vẫn sinh `.class` cho code sai (thay thân method bằng
 > `throw new Error(...)`), nên **file `.class` mới không chứng minh code compile được**.
 > Dùng `./mvnw clean compile` khi cần chắc chắn.
+
+> `npx tsc --noEmit` ở gốc `FE/` **không kiểm file nào** (`tsconfig.json` có `"files": []`, chỉ trỏ tới hai
+> project con), nên im lặng không có nghĩa là sạch. Dùng `npm run build` hoặc `npx tsc -p tsconfig.app.json --noEmit`.
 
 ## Cách làm việc mà chủ repo muốn
 

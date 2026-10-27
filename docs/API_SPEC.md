@@ -339,15 +339,15 @@ Ba mức quyền dùng trong toàn bộ tài liệu này:
 | `GET` | `/api/products` | 🌐 Công khai | ✅ | `ProductList`, `ProductDetail` ⁵ | `/`, `/:nameId` |
 | `GET` | `/api/products/{id}` | 🌐 Công khai | ✅ | `ProductDetail` | `/:nameId` |
 | `GET` | `/api/categories` | 🌐 Công khai | ✅ | `ProductList` (thanh lọc) | `/` |
-| `GET` | `/api/cart` | 🔒 Đã đăng nhập ² | ✅ | `Cart` *(stub)*, `Header` ⁷ | `/cart` + mọi màn |
-| `POST` | `/api/cart/items` | 🔒 Đã đăng nhập ² | ✅ | `ProductDetail` (Thêm vào giỏ) | `/:nameId` |
+| `GET` | `/api/cart` | 🔒 Đã đăng nhập ² | ✅ | `Cart`, `Checkout`, `Header` ⁷ | `/cart`, `/checkout` + mọi màn |
+| `POST` | `/api/cart/items` | 🔒 Đã đăng nhập ² | ✅ | `ProductDetail` (Thêm vào giỏ, Mua ngay) | `/:nameId` |
 | `PUT` | `/api/cart/items/{id}` | 🔒 Đã đăng nhập ² | ✅ | `Cart` (ô số lượng) | `/cart` |
 | `DELETE` | `/api/cart/items/{id}` | 🔒 Đã đăng nhập ² | ✅ | `Cart` (xoá 1 dòng) | `/cart` |
 | `DELETE` | `/api/cart/items?ids=1,2,3` | 🔒 Đã đăng nhập ² | ✅ | `Cart` (xoá nhiều) | `/cart` |
-| `POST` | `/api/orders` | 🔒 Đã đăng nhập ² | ✅ | **chưa có màn** — trang đặt hàng | `/checkout` ⁸ |
-| `GET` | `/api/orders` | 🔒 Đã đăng nhập ² | ✅ | **chưa có màn** — Đơn mua | `/user/purchase` ⁸ |
-| `GET` | `/api/orders/{id}` | 🔒 Đã đăng nhập ² | ✅ | **chưa có màn** — chi tiết đơn | `/user/purchase/:id` ⁸ |
-| `PUT` | `/api/orders/{id}/cancel` | 🔒 Đã đăng nhập ² | ✅ | **chưa có màn** — Đơn mua | `/user/purchase` ⁸ |
+| `POST` | `/api/orders` | 🔒 Đã đăng nhập ² | ✅ | `Checkout` | `/checkout` |
+| `GET` | `/api/orders` | 🔒 Đã đăng nhập ² | ✅ | `Purchase` | `/user/purchase` |
+| `GET` | `/api/orders/{id}` | 🔒 Đã đăng nhập ² | ✅ | `PurchaseDetail` | `/user/purchase/:id` |
+| `PUT` | `/api/orders/{id}/cancel` | 🔒 Đã đăng nhập ² | ✅ | `Purchase`, `PurchaseDetail` (hộp thoại `CancelOrderDialog`) | `/user/purchase`, `/user/purchase/:id` |
 | `POST` | `/api/admin/categories` | 👑 ADMIN | ✅ | chưa có màn admin ⁶ | — |
 | `PUT` | `/api/admin/categories/{id}` | 👑 ADMIN | ✅ | chưa có màn admin ⁶ | — |
 | `DELETE` | `/api/admin/categories/{id}` | 👑 ADMIN | ✅ | chưa có màn admin ⁶ | — |
@@ -369,15 +369,12 @@ nên không thể đòi access token hợp lệ. Cả hai tự xác thực bằn
 `type === "/errors/token-expired"`, rồi retry request gốc — người dùng không thấy gì.
 
 ⁵ `ProductList` gọi để hiển thị danh sách + tìm kiếm + lọc; `ProductDetail` gọi lần nữa cho khối
-"sản phẩm tương tự" (cùng category).
+"sản phẩm tương tự" (cùng category, loại chính sản phẩm đang xem bằng `exclude`).
 
 ⁶ **Chưa có màn admin nào ở FE.** Các API này hiện gọi bằng Postman hoặc curl. Màn admin nếu làm thì là
 một app riêng, không nhét vào FE người mua.
 
-⁷ `Cart` gọi để hiển thị giỏ; `Header` gọi để hiện con số trên icon giỏ hàng.
-
-⁸ **Route đề xuất, chưa tồn tại** trong `FE/src/constants/path.ts`. Ghi ở đây để khi dựng màn thì
-dùng đúng đường dẫn đã thống nhất, khỏi phải sửa link sau.
+⁷ `Cart` gọi để hiển thị giỏ; `Checkout` đọc lại để lấy các dòng đã chọn; `Header` gọi để hiện con số trên icon giỏ hàng.
 
 ² **Hai tầng kiểm tra, đừng lẫn lộn.** Cột này chỉ nói về tầng thứ nhất.
 
@@ -1184,7 +1181,7 @@ phẩm — xem [`DATABASE_DESIGN.md` §3.5](DATABASE_DESIGN.md).
 
 **Quyền:** 🔒 **Đã đăng nhập**, và chỉ thao tác được trên dữ liệu của **chính mình**
 
-**Màn FE:** `Cart` *(stub)* route `/cart`, và `Header` cho con số trên icon giỏ
+**Màn FE:** `Cart` route `/cart`, `Checkout` route `/checkout`, và `Header` cho con số trên icon giỏ
 
 **Response `200`**
 ```json
@@ -1207,7 +1204,7 @@ cho product và một câu cho category — giỏ 30 món thành hơn 60 câu.
 
 **Quyền:** 🔒 **Đã đăng nhập**, và chỉ thao tác được trên dữ liệu của **chính mình**
 
-**Màn FE:** `ProductDetail` (nút "Thêm vào giỏ hàng") — route `/:nameId`
+**Màn FE:** `ProductDetail` (nút "Thêm vào giỏ hàng" và "Mua ngay") — route `/:nameId`
 
 **Request**
 ```json
@@ -1350,7 +1347,7 @@ Tất cả endpoint nhóm này **bắt buộc** có header `Authorization`.
 
 **Quyền:** 🔒 **Đã đăng nhập**, và chỉ thao tác được trên dữ liệu của **chính mình**
 
-**Màn FE:** **Chưa có màn** — trang đặt hàng cần viết mới, route đề xuất `/checkout`
+**Màn FE:** `Checkout` — route `/checkout`
 
 Chuyển các dòng được chọn trong giỏ thành một đơn hàng.
 
@@ -1431,7 +1428,7 @@ khi dựng response.
 
 **Quyền:** 🔒 **Đã đăng nhập**, và chỉ thao tác được trên dữ liệu của **chính mình**
 
-**Màn FE:** **Chưa có màn** — trang "Đơn mua" cần viết mới, route đề xuất `/user/purchase`
+**Màn FE:** `Purchase` — route `/user/purchase`
 
 | Param | Kiểu | Mặc định | Ý nghĩa |
 |---|---|---|---|
@@ -1487,7 +1484,7 @@ prepared statement.
 
 **Quyền:** 🔒 **Đã đăng nhập**, và chỉ thao tác được trên dữ liệu của **chính mình**
 
-**Màn FE:** **Chưa có màn** — route đề xuất `/user/purchase/:id`
+**Màn FE:** `PurchaseDetail` — route `/user/purchase/:id`
 
 **Response `200`** — object Order đầy đủ.
 
@@ -1504,7 +1501,7 @@ chỉ gọi `getProduct().getId()` — proxy đã biết sẵn id — xem `DATAB
 
 **Quyền:** 🔒 **Đã đăng nhập**, và chỉ thao tác được trên dữ liệu của **chính mình**
 
-**Màn FE:** **Chưa có màn** — nút huỷ trong "Đơn mua", route đề xuất `/user/purchase`
+**Màn FE:** `Purchase` và `PurchaseDetail` (hộp thoại `CancelOrderDialog`) — route `/user/purchase`, `/user/purchase/:id`
 
 **Request**
 ```json
@@ -1840,46 +1837,46 @@ access token, job dọn token), 16 ca cho `409` khi trùng `UNIQUE` và giới h
 
 ---
 
-## 12. Danh sách việc cần sửa ở FE khi tích hợp
+## 12. FE: cách nối với API
 
-FE hiện tại được viết theo một contract API cũ. Để dùng BE này, cần sửa:
+FE (`FE/`, React + TypeScript + Vite, cổng 3000) gọi đúng contract của tài liệu này. Bảng "màn nào gọi API nào"
+nằm ở §1.10. Mục này ghi những chỗ nối khó thấy nếu chỉ đọc từng màn.
 
 ### 12.1. `FE/src/utils/http.ts`
 
-```diff
-- baseURL: 'https://api-ecom.duthanhduoc.com/',
-+ baseURL: 'http://localhost:8081/api/',
+Một instance axios dùng chung (`baseURL` là `http://localhost:8081/api/`), gắn `Authorization: Bearer <accessToken>`
+vào mọi request. Interceptor response xử lý lỗi theo `type` (§1.6):
 
-- config.headers.Authorization = this.access_token
-+ config.headers.Authorization = `Bearer ${this.access_token}`
-```
+- `401` `/errors/token-expired` → gọi `POST auth/refresh-token`, lưu đè **cả** `accessToken` lẫn `refreshToken` mới,
+  rồi gửi lại request gốc đúng một lần. Người dùng không thấy gì.
+- `401` `/errors/refresh-token-invalid` hoặc `/errors/token-invalid` → xoá phiên (`clearLS`). `AppContext` nghe
+  tín hiệu đó, đưa giao diện về trạng thái chưa đăng nhập và xoá dữ liệu đã tải; `ProtectedRoute` chuyển về `/login`.
+- Lỗi khác, trừ `422` → toast hiện `title` (lỗi mạng không có response thì dùng `message` của axios). `422` không
+  toast vì mỗi form tự đưa `errors` về đúng ô nhập.
 
-**Refresh token (§3.4).** Interceptor xử lý `401` theo `type`:
+**Chỉ một request refresh tại một thời điểm.** BE xoay vòng token: gửi song song hai lần với cùng một refresh token
+thì lần sau bị coi là token bị dùng lại và người dùng bị đăng xuất khỏi mọi thiết bị (§3.4). Vì vậy:
 
-- `/errors/token-expired` → gọi `POST auth/refresh-token`, lưu đè **cả** `accessToken` lẫn `refreshToken`
-  mới, rồi gửi lại request gốc.
-- `/errors/refresh-token-invalid` hoặc `/errors/token-invalid` → xoá token đã lưu, về màn đăng nhập.
-- Đăng xuất gửi `{ refreshToken }` trong body của `POST auth/logout` (không cần header `Authorization`).
-- Đổi mật khẩu thành công thì mọi refresh token cũ bị thu hồi (§4.2) → gọi lại `auth/login` bằng mật khẩu
-  mới để lấy cặp token mới.
-- **Chỉ một request refresh tại một thời điểm**: nhiều request cùng nhận `token-expired` thì cùng chờ một
-  promise refresh dùng chung. Gửi song song hai lần với cùng một refresh token thì lần sau bị BE coi là
-  token bị dùng lại và người dùng bị đăng xuất.
+- Nhiều request cùng nhận `token-expired` thì cùng chờ một promise refresh dùng chung.
+- Nhiều tab thì xếp hàng qua Web Locks API. Tab đến sau thấy localStorage đã có access token mới hơn thì dùng luôn,
+  không đổi thêm lần nữa.
+- Refresh token luôn đọc từ localStorage lúc cần chứ không giữ trong RAM, vì tab khác có thể đã xoay vòng.
+- Chỉ `401`/`422` từ chính `auth/refresh-token` mới tính là refresh token hỏng. Lỗi mạng hoặc `5xx` thì giữ phiên và
+  chỉ báo lỗi.
 
-Ngoài ra, interceptor đang so sánh `url === path.login` để biết khi nào lưu token — mà `path.login`
-đồng thời là route của React Router. Khi API đổi thành `auth/login`, hai thứ này tách đôi → cần hằng số
-riêng cho API path (ví dụ `constants/apiPath.ts`).
+Các điểm khác:
 
-### 12.2. Đọc response — không còn `.data.data`
+- Đăng xuất gửi `{ refreshToken }` trong body của `POST auth/logout`, không cần header `Authorization`.
+- Đổi mật khẩu thành công thì mọi refresh token cũ bị thu hồi (§4.2), nên `ChangePassword` gọi lại `auth/login`
+  bằng mật khẩu mới để có cặp token mới.
+- Interceptor lưu token và profile khi response của `auth/login` hoặc `auth/register` về, nhận ra bằng
+  `url === apiPath.login`. `constants/apiPath.ts` (đường dẫn API) tách khỏi `constants/path.ts` (route của React
+  Router) vì hai thứ này khác nhau dù trùng chữ.
 
-BE không bọc envelope nữa, nên axios trả thẳng dữ liệu:
+### 12.2. Đọc response
 
-```diff
-- const products = response.data.data.products
-+ const products = response.data.items
-```
-
-`types/utils.type.ts` bỏ hẳn `SuccessResponse<Data>` và `ErrorResponse<Data>`, thay bằng hai kiểu mới:
+BE không bọc envelope, nên `response.data` chính là DTO, và danh sách phân trang là `response.data.items`. Hai kiểu
+dùng chung ở `types/utils.type.ts`:
 
 ```ts
 export interface Paginated<T> {
@@ -1900,54 +1897,44 @@ export interface ProblemDetail {
 }
 ```
 
-Chỗ bắt lỗi form ở `Login.tsx` và `Register.tsx` đổi theo — lỗi từng field giờ nằm ở `errors`:
+Form bắt lỗi `422` bằng `isAxiosUnprocessableEntityError<ProblemDetail>(error)` rồi đưa
+`error.response?.data.errors` về từng ô. Câu hiện cho người dùng lấy từ `title`.
 
-```diff
-- if (isAxiosUnprocessableEntityError<ErrorResponse<FormData>>(error)) {
--   const formError = error.response?.data.data
-+ if (isAxiosUnprocessableEntityError<ProblemDetail>(error)) {
-+   const formError = error.response?.data.errors
-```
+### 12.3. Quy ước dữ liệu
 
-Và câu thông báo hiện cho người dùng đọc từ `title` thay vì `message`.
+- Field JSON là `camelCase`, `id` là string (kể cả khi gửi lên, như `cartItemIds: string[]`).
+- `priceBeforeDiscount` có thể `null` (§2.3, §2.6). `hasDiscount()` trong `utils/utils.ts` quyết định có hiện giá
+  gạch và `-x%` hay không.
+- Tiền là số nguyên VND, định dạng bằng `formatCurrency`. Ngày của `<input type="date">` có cùng dạng `yyyy-MM-dd` với
+  `LocalDate` ở BE; `toISODate` tạo chuỗi đó theo giờ máy.
+- Trạng thái đơn là chuỗi enum ở `constants/order.ts`, không phải số.
 
-### 12.3. Đổi tên field — find & replace toàn bộ `FE/src`
+### 12.4. Tầng API
 
-| Cũ | Mới |
-|---|---|
-| `_id` | `id` |
-| `price_before_discount` | `priceBeforeDiscount` |
-| `buy_count` | `quantity` |
-| `product_id` | `productId` |
-| `access_token` | `accessToken` |
-| `date_of_birth` | `dateOfBirth` |
-| `sort_by` | `sortBy` |
-| `rating_filter` | `ratingFilter` |
-| `price_min` / `price_max` | `priceMin` / `priceMax` |
-| `page_size` | `totalPages` |
+Mỗi module một file ở `FE/src/apis/`: `auth.api.ts`, `user.api.ts`, `product.api.ts`, `category.api.ts`,
+`cart.api.ts`, `order.api.ts`; kiểu dữ liệu tương ứng ở `FE/src/types/*.type.ts`.
 
-### 12.4. Viết lại tầng API
+Upload file (`user.api.ts` → `uploadAvatar`) phải khai `Content-Type: multipart/form-data` ngay ở request: instance
+đặt sẵn `application/json`, gặp header đó axios biến `FormData` thành chuỗi JSON và BE trả `415`.
 
-| File cũ | Thay bằng |
-|---|---|
-| `apis/auth.api.ts` | Đổi path sang `auth/register`, `auth/login`, `auth/logout` |
-| `apis/purchase.api.ts` | Tách thành `apis/cart.api.ts` (mục 7) và `apis/order.api.ts` (mục 8) |
-| `types/purchase.type.ts` | Tách thành `types/cart.type.ts` và `types/order.type.ts` |
-| `constants/purchase.ts` | Thay `purchaseStatus` (số) bằng `orderStatus` (chuỗi enum) |
+### 12.5. Route
 
-### 12.5. Trang cần viết mới
+| Route | Màn | Khung | Ai vào được |
+|---|---|---|---|
+| `/` | `ProductList` | `MainLayout` | mọi người |
+| `/:nameId` | `ProductDetail` | `MainLayout` | mọi người |
+| `/login`, `/register` | `Login`, `Register` | `RegisterLayout` | chỉ khi chưa đăng nhập |
+| `/cart`, `/checkout` | `Cart`, `Checkout` | `MainLayout` | đã đăng nhập |
+| `/user/profile`, `/user/password`, `/user/purchase` | `Profile`, `ChangePassword`, `Purchase` | `MainLayout` + `UserLayout` (menu tài khoản bên trái) | đã đăng nhập |
+| `/user/purchase/:id` | `PurchaseDetail` | `MainLayout` | đã đăng nhập |
 
-- **Cart** (hiện là stub) — dựng theo API mục 7. Lưu ý giá đọc từ `item.product.price`, không còn field
-  giá riêng trên dòng giỏ hàng.
-- **Trang đặt hàng** — form nhập `recipientName`, `recipientPhone`, `shippingAddress`, `note` rồi gọi
-  `POST /api/orders`.
-- **Đơn mua** — chưa tồn tại. Hiển thị danh sách đơn theo tab trạng thái, mỗi đơn là một thẻ chứa nhiều
-  sản phẩm (khác với contract cũ vốn hiển thị danh sách sản phẩm phẳng).
-- **Profile** (hiện là stub) — dựng theo API mục 4.
+- React Router ưu tiên route tĩnh (`/cart`, `/login`…) hơn `/:nameId`, nên `ProductDetail` không nuốt các đường dẫn
+  này.
+- `Checkout` nhận danh sách dòng giỏ đã chọn qua `navigate(path.checkout, { state: { cartItemIds } })`. Vào thẳng
+  `/checkout` không qua giỏ thì bị chuyển về `/cart`.
 
-### 12.6. Sửa 2 lỗi build còn tồn đọng
+### 12.6. Kiểm tra
 
-`FE/src/components/Pagination/Pagination.tsx` và
-`FE/src/pages/ProductList/components/RatingStars/RatingStars.tsx` đang import `QueryConfig` từ
-`pages/ProductList/ProductList` — đường dẫn cũ, nay nằm ở `src/hooks/useQueryConfig.tsx`.
-Hiện `npm run build` đang fail vì lỗi này.
+`npm run build` (`tsc -b && vite build`) và `npm run lint` trong `FE/`. Chỉ cần kiểm kiểu thì dùng
+`npx tsc -p tsconfig.app.json --noEmit`; lệnh `npx tsc --noEmit` ở gốc `FE/` không kiểm file nào vì `tsconfig.json`
+chỉ trỏ tới hai project con.
