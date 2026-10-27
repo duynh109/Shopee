@@ -3,20 +3,20 @@
 Dự án thương mại điện tử gồm hai nửa trong cùng một repo: một frontend React và một backend Spring Boot
 được thiết kế lại từ đầu.
 
-Frontend được xây trước nên đang dùng một contract API cũ. Backend được thiết kế lại từ đầu theo chuẩn
-REST thông dụng của hệ sinh thái Java, có tài liệu thiết kế riêng, và **không** bám theo contract cũ đó.
-Bước tích hợp sẽ sửa frontend để gọi backend này.
+Frontend được xây trước theo một contract API cũ. Backend được thiết kế lại từ đầu theo chuẩn REST thông dụng
+của hệ sinh thái Java, có tài liệu thiết kế riêng, và **không** bám theo contract cũ đó. Frontend sau đó được
+sửa để gọi đúng backend này.
 
 ## Trạng thái
 
-> **Hai nửa chưa nối với nhau.** Backend v1 đã xong; tích hợp frontend là giai đoạn tiếp theo. Chạy được
-> từng nửa riêng, nhưng chưa chạy được luồng end-to-end.
+> **Hai nửa đã nối với nhau.** Chạy được trọn luồng của người mua: đăng ký → xem và tìm sản phẩm → giỏ hàng →
+> đặt hàng → xem và huỷ đơn → hồ sơ và đổi mật khẩu.
 
 | | Trạng thái |
 |---|---|
 | **Backend** | **v1 xong**: 9/9 bước của lộ trình, đủ 29/29 endpoint, hồi quy cuối 242/242 ca. Có: đăng ký, đăng nhập, đăng xuất bằng JWT kèm refresh token (xoay vòng, phát hiện token bị lộ, tự dọn token quá hạn); phân quyền USER/ADMIN theo từng nhóm endpoint; xử lý lỗi theo RFC 9457; hồ sơ cá nhân; danh mục; sản phẩm có phân trang, lọc, sắp xếp, album ảnh, xoá mềm; giỏ hàng; đặt hàng, xem đơn và huỷ đơn; admin xem mọi đơn, đổi trạng thái đơn theo máy trạng thái, xem danh sách người dùng; upload ảnh sản phẩm và avatar; gỡ sản phẩm thì tự dọn khỏi giỏ hàng của mọi người |
-| **Frontend** | Xong phần danh sách sản phẩm, chi tiết sản phẩm, tìm kiếm, lọc, phân trang, đăng nhập/đăng ký. Giỏ hàng và trang cá nhân còn là stub. Vẫn đang gọi contract API cũ, chưa trỏ sang backend này |
-| **Tích hợp** | Chưa bắt đầu — danh sách việc cần sửa ở `docs/API_SPEC.md` mục 12 |
+| **Frontend** | Xong phần người mua: danh sách và chi tiết sản phẩm (tìm kiếm, lọc, phân trang), đăng ký/đăng nhập với refresh token tự đổi, giỏ hàng, đặt hàng (từ giỏ hoặc "Mua ngay"), đơn mua (tab trạng thái, chi tiết, huỷ), hồ sơ kèm avatar, đổi mật khẩu. Gọi đúng contract của backend. Chưa có màn quản trị |
+| **Tích hợp** | Xong — cách frontend nối với API ở `docs/API_SPEC.md` mục 12, màn nào gọi API nào ở mục 1.10 |
 
 ## Cấu trúc
 
@@ -141,15 +141,19 @@ Chi tiết từng bước ở `docs/API_SPEC.md` mục 11.
 
 Liệt kê thẳng để khỏi phải đọc code mới biết:
 
-- Frontend và backend **chưa nối**; frontend vẫn đang gọi contract API cũ
 - Ảnh upload lưu trên đĩa của máy chạy app — chạy nhiều server thì phải chuyển sang object storage; file
   upload rồi không dùng tới chưa được dọn
 - Chưa có màn quản trị ở frontend — các endpoint admin hiện gọi bằng Postman
-- **Chưa có test tự động.** Mỗi bước được kiểm chứng bằng cách chạy app rồi gọi API thật cho toàn bộ
-  các ca và đối chiếu status code — phần đặt hàng còn thử cả request gửi song song. Các script đó chưa
-  nằm trong repo; viết test tự động là việc cần làm
+- **Chưa có test tự động.** Mỗi bước của backend được kiểm chứng bằng cách chạy app rồi gọi API thật cho
+  toàn bộ các ca và đối chiếu status code — phần đặt hàng còn thử cả request gửi song song. Các màn của
+  frontend được kiểm bằng cách chạy trên trình duyệt. Các script đó chưa nằm trong repo; viết test tự động
+  là việc cần làm
 - Chưa dùng Flyway — schema do Hibernate tự tạo từ entity (`ddl-auto=update`), không có lịch sử thay đổi.
   Đủ cho học và chạy local, không dùng cho production (`docs/DATABASE_DESIGN.md` mục 9)
+- Người dùng không xoá trống được tên, số điện thoại, địa chỉ đã nhập: backend hiểu `null` là "đừng đổi"
+  (`docs/API_SPEC.md` §4.2)
+- Mất response lúc đổi refresh token (mạng rớt đúng lúc) thì người dùng bị đăng xuất; backend chưa có thời gian
+  ân hạn cho token vừa bị thu hồi (`docs/API_SPEC.md` §3.4)
 - Access token không thu hồi được: đăng xuất và đổi mật khẩu thu hồi refresh token ngay, nhưng access
   token đang cầm vẫn dùng được tới khi hết hạn (tối đa 15 phút); đổi role trong database cũng cần tối đa
   chừng đó mới có hiệu lực
