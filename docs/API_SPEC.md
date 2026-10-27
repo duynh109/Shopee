@@ -804,6 +804,17 @@ bị thu hồi. Lần chạy không xoá gì thì không in log. Với lịch m�
 Chạy nhiều server thì server nào cũng chạy job — vô hại, lần chạy sau chỉ xoá 0 bản ghi
 (`SYSTEM_DESIGN.md` §3.1). Câu xoá quét cả bảng vì `expires_at` không có index — xem `DATABASE_DESIGN.md` §3.8.
 
+#### Giới hạn của v1: mất response đổi token thì bị đăng xuất
+
+BE thu hồi refresh token cũ ngay khi đổi, rồi mới trả cặp mới. Nếu response đó không tới được client (mạng rớt đúng
+lúc) thì client vẫn cầm token cũ đã bị thu hồi. Lần đổi sau, BE coi đó là token bị dùng lại (xem ở trên) nên thu
+hồi mọi token của user — người dùng bị đăng xuất khỏi mọi thiết bị. FE không cứu được ca này, vì nó không biết BE
+đã xử lý request hay chưa.
+
+v1 chấp nhận vì ca này rất hẹp: mạng chỉ cần liền mạch trong vài mili giây của một request đổi token, và chỉ xảy ra
+khi access token vừa hết hạn. Muốn sửa thì cho phép token **vừa** bị thu hồi được đổi lại trong một khoảng ân hạn
+ngắn (vài chục giây) thay vì coi là bị lộ ngay. Cái giá: báo động token bị lộ yếu đi trong khoảng đó.
+
 ---
 
 ## 4. Nhóm API: User / Profile

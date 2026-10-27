@@ -157,6 +157,8 @@ function ProductDetailContent() {
   }
 
   if (!product) return null
+  // Hết hàng thì khoá ô số lượng và hai nút mua. Không khoá thì bấm vào BE vẫn từ chối (422, "vượt quá số lượng trong kho")
+  const isOutOfStock = product.quantity <= 0
   return (
     <div className='bg-gray-100 py-6'>
       <div className='container'>
@@ -264,13 +266,18 @@ function ProductDetailContent() {
                   onType={handleBuyCount}
                   value={buyCount}
                   max={product.quantity}
+                  classNameWrapper={isOutOfStock ? 'pointer-events-none opacity-60' : ''}
                 />
-                <div className='ml-4 text-sm text-gray-500'>{product.quantity} sản phẩm có sẵn</div>
+                {isOutOfStock ? (
+                  <div className='ml-4 text-sm font-medium text-red-500'>Hết hàng</div>
+                ) : (
+                  <div className='ml-4 text-sm text-gray-500'>{product.quantity} sản phẩm có sẵn</div>
+                )}
               </div>
               <div className='mt-8 flex items-center'>
                 <button
                   onClick={addToCart}
-                  disabled={addToCartMutation.isPending}
+                  disabled={addToCartMutation.isPending || isOutOfStock}
                   className='flex h-12 items-center justify-center rounded-sm border border-orange bg-orange/10 px-5 capitalize text-orange shadow-sm hover:bg-orange/5 disabled:cursor-not-allowed disabled:opacity-60'
                 >
                   <img
@@ -282,7 +289,7 @@ function ProductDetailContent() {
                 </button>
                 <button
                   onClick={buyNow}
-                  disabled={addToCartMutation.isPending}
+                  disabled={addToCartMutation.isPending || isOutOfStock}
                   className='ml-4 flex h-12 min-w-[5rem] items-center justify-center rounded-sm bg-orange px-10 capitalize text-white shadow-sm outline-none hover:bg-orange/90 disabled:cursor-not-allowed disabled:opacity-60'
                 >
                   Mua ngay
