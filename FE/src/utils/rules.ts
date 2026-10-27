@@ -1,5 +1,6 @@
 import type { RegisterOptions, UseFormGetValues } from 'react-hook-form'
 import * as yup from 'yup'
+import { toISODate } from './utils'
 
 type Rules = { [key in 'email' | 'password' | 'confirm_password']?: RegisterOptions }
 
@@ -104,4 +105,39 @@ export const schema = yup.object({
   cancelledReason: yup.string().trim().required('Vui lòng nhập lý do huỷ đơn').max(255, 'Tối đa 255 kí tự')
 })
 
+// Không dùng lại schema.name ở trên: đó là ô tìm kiếm và bắt buộc nhập, còn tên trong hồ sơ là tuỳ chọn.
+// Mọi field để trống là hợp lệ: FE sẽ không gửi field trống, BE hiểu là "giữ nguyên".
+export const profileSchema = yup.object({
+  name: yup.string().trim().max(255, 'Tối đa 255 kí tự'),
+  phone: yup.string().test('phone', 'Số điện thoại không hợp lệ', (value) => !value || PHONE_REGEX.test(value)),
+  address: yup.string().trim().max(255, 'Tối đa 255 kí tự'),
+  // So sánh chuỗi yyyy-MM-dd được vì cùng độ dài và thứ tự chữ cái trùng thứ tự thời gian
+  dateOfBirth: yup
+    .string()
+    .test('past', 'Ngày sinh phải là ngày trong quá khứ', (value) => !value || value < toISODate(new Date()))
+})
+
+// BE giới hạn mật khẩu theo BYTE (bcrypt chỉ đọc 72 byte đầu), không theo kí tự: chữ có dấu chiếm 2–3 byte
+const MAX_PASSWORD_BYTES = 72
+
+export const changePasswordSchema = yup.object({
+  // Chỉ bắt buộc nhập: đúng hay sai là việc của BE
+  password: yup.string().required('Vui lòng nhập mật khẩu hiện tại'),
+  newPassword: yup
+    .string()
+    .required('Vui lòng nhập mật khẩu mới')
+    .min(6, 'Độ dài tối thiểu 6 kí tự')
+    .test(
+      'max-bytes',
+      'Mật khẩu quá dài (tối đa 72 byte, chữ có dấu chiếm nhiều byte hơn)',
+      (value) => !value || new TextEncoder().encode(value).length <= MAX_PASSWORD_BYTES
+    ),
+  confirmNewPassword: yup
+    .string()
+    .required('Vui lòng nhập lại mật khẩu mới')
+    .oneOf([yup.ref('newPassword')], 'Nhập lại mật khẩu không khớp')
+})
+
 export type Schema = yup.InferType<typeof schema>
+export type ProfileSchema = yup.InferType<typeof profileSchema>
+export type ChangePasswordSchema = yup.InferType<typeof changePasswordSchema>

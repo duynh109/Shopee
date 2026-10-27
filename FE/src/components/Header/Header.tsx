@@ -6,6 +6,7 @@ import { yupResolver } from '@hookform/resolvers/yup'
 import { omit } from 'lodash'
 
 import Popover from '../Popover'
+import Avatar from '../Avatar'
 import authApi from '../../apis/auth.api'
 import { AppContext } from '../../contexts/app.context'
 import path from '../../constants/path'
@@ -221,10 +222,7 @@ export default function Header() {
                 }
               >
                 <div className='mr-2 h-6 w-6 flex-shrink-0'>
-                  <img
-                    src='https://down-vn.img.susercontent.com/file/7c7e682bcb00bf2687fea549e050bf35_tn'
-                    className='h-full w-full rounded-full object-cover'
-                  />
+                  <Avatar src={profile?.avatar} className='h-full w-full' />
                 </div>
                 <div>{profile?.email}</div>
               </Popover>

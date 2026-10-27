@@ -333,9 +333,9 @@ Ba mức quyền dùng trong toàn bộ tài liệu này:
 | `POST` | `/api/auth/login` | 🌐 Công khai | ✅ | `Login` | `/login` |
 | `POST` | `/api/auth/logout` | 🌐 Công khai ¹ | ✅ | `Header` ³ | mọi màn `MainLayout` |
 | `POST` | `/api/auth/refresh-token` | 🌐 Công khai ¹ | ✅ | interceptor `utils/http.ts` ⁴ | — |
-| `GET` | `/api/users/me` | 🔒 Đã đăng nhập ² | ✅ | `Profile` *(stub)* | `/profile` |
-| `PUT` | `/api/users/me` | 🔒 Đã đăng nhập ² | ✅ | `Profile` *(stub)* | `/profile` |
-| `POST` | `/api/users/me/avatar` | 🔒 Đã đăng nhập ² | ✅ | `Profile` *(stub)* | `/profile` |
+| `GET` | `/api/users/me` | 🔒 Đã đăng nhập ² | ✅ | `Profile` | `/user/profile` |
+| `PUT` | `/api/users/me` | 🔒 Đã đăng nhập ² | ✅ | `Profile`, `ChangePassword` | `/user/profile`, `/user/password` |
+| `POST` | `/api/users/me/avatar` | 🔒 Đã đăng nhập ² | ✅ | `Profile` | `/user/profile` |
 | `GET` | `/api/products` | 🌐 Công khai | ✅ | `ProductList`, `ProductDetail` ⁵ | `/`, `/:nameId` |
 | `GET` | `/api/products/{id}` | 🌐 Công khai | ✅ | `ProductDetail` | `/:nameId` |
 | `GET` | `/api/categories` | 🌐 Công khai | ✅ | `ProductList` (thanh lọc) | `/` |
@@ -363,7 +363,7 @@ Ba mức quyền dùng trong toàn bộ tài liệu này:
 nên không thể đòi access token hợp lệ. Cả hai tự xác thực bằng refresh token nằm trong body.
 
 ³ `components/Header/Header.tsx` là component dùng chung, có mặt trên mọi màn bọc bởi `MainLayout`
-(`/`, `/:nameId`, `/cart`, `/profile`). Nút đăng xuất nằm ở menu tài khoản của nó.
+(`/`, `/:nameId`, `/cart`, `/checkout`, `/user/…`). Nút đăng xuất nằm ở menu tài khoản của nó.
 
 ⁴ Không màn nào gọi trực tiếp. Interceptor trong `FE/src/utils/http.ts` tự gọi khi gặp `401` có
 `type === "/errors/token-expired"`, rồi retry request gốc — người dùng không thấy gì.
@@ -814,7 +814,7 @@ Tất cả endpoint nhóm này cần header `Authorization`.
 
 **Quyền:** 🔒 **Đã đăng nhập**, và chỉ thao tác được trên dữ liệu của **chính mình**
 
-**Màn FE:** `Profile` *(hiện là stub)* — route `/profile`
+**Màn FE:** `Profile` — route `/user/profile`
 
 Lấy thông tin user đang đăng nhập (dựa vào token, không truyền id).
 
@@ -824,7 +824,7 @@ Lấy thông tin user đang đăng nhập (dựa vào token, không truyền id)
 
 **Quyền:** 🔒 **Đã đăng nhập**, và chỉ thao tác được trên dữ liệu của **chính mình**
 
-**Màn FE:** `Profile` *(hiện là stub)* — route `/profile`
+**Màn FE:** `Profile` — route `/user/profile` (hồ sơ, avatar); `ChangePassword` — route `/user/password` (đổi mật khẩu)
 
 Cập nhật profile. Tất cả field đều optional — gửi field nào cập nhật field đó.
 
@@ -849,6 +849,9 @@ Cập nhật profile. Tất cả field đều optional — gửi field nào cậ
   `field: null` đều đến BE dưới dạng `null`, nên v1 không phân biệt được hai ca đó. Hệ quả: không có
   cách nào xoá `name`/`phone`/`address` về `null` qua API. Màn `Profile` không có thao tác nào cần
   việc đó nên chấp nhận được; muốn làm đúng thì phải dùng `JsonNullable` cho từng field.
+- **Chuỗi rỗng `""` cũng không phải cách xoá, và BE xử lý không đồng nhất:** `name` và `address` bị ghi thành `""`,
+  `phone` bị `422` (không khớp regex), `dateOfBirth` bị bỏ qua. Nên FE không gửi ô để trống, và sau mỗi lần lưu đặt
+  lại form theo user BE trả về, để ô vừa xoá trống hiện lại giá trị thật.
 - **Đổi mật khẩu thu hồi mọi refresh token của user** — mọi thiết bị, kể cả thiết bị đang dùng, không đổi
   được token nữa (người ta thường đổi mật khẩu vì nghi bị lộ). Access token đang cầm vẫn hợp lệ tới lúc hết
   hạn (tối đa 15 phút); FE nên đăng nhập lại ngay bằng mật khẩu mới để có cặp token mới. `UserService` chỉ phát
@@ -862,7 +865,7 @@ Cập nhật profile. Tất cả field đều optional — gửi field nào cậ
 
 **Quyền:** 🔒 **Đã đăng nhập**
 
-**Màn FE:** `Profile` *(hiện là stub)* — route `/profile`
+**Màn FE:** `Profile` — route `/user/profile`
 
 **Request**: `multipart/form-data`, field name là `image`. Tối đa 1 MiB, nội dung phải là JPEG hoặc PNG.
 

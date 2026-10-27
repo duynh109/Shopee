@@ -12,3 +12,15 @@ export interface User {
   createdAt: string
   updatedAt: string
 }
+
+// Body của PUT /users/me. Field nào không gửi (undefined) thì BE giữ nguyên; BE không phân biệt "không gửi" với
+// null nên không có cách xoá một field về trống (API_SPEC §4.2). Đổi mật khẩu thì gửi kèm password + newPassword.
+export interface UpdateProfileBody {
+  name?: string
+  phone?: string
+  address?: string
+  dateOfBirth?: string
+  avatar?: string
+  password?: string
+  newPassword?: string
+}

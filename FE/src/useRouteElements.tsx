@@ -6,7 +6,9 @@ import Login from './pages/Login'
 import Register from './pages/Register'
 import RegisterLayout from './layouts/RegisterLayout'
 import MainLayout from './layouts/MainLayout'
+import UserLayout from './layouts/UserLayout'
 import Profile from './pages/Profile'
+import ChangePassword from './pages/ChangePassword'
 import { AppContext } from './contexts/app.context'
 import path from './constants/path'
 import ProductDetail from './pages/ProductDetail'
@@ -54,12 +56,17 @@ export default function useRouteElements() {
       element: <ProtectedRoute />,
       children: [
         {
-          path: path.profile,
+          // Layout route (không có path): chỉ để bọc các route con trong khung có menu tài khoản bên trái
           element: (
             <MainLayout>
-              <Profile />
+              <UserLayout />
             </MainLayout>
-          )
+          ),
+          children: [
+            { path: path.profile, element: <Profile /> },
+            { path: path.password, element: <ChangePassword /> },
+            { path: path.purchase, element: <Purchase /> }
+          ]
         },
         {
           path: path.cart,
@@ -78,14 +85,7 @@ export default function useRouteElements() {
           )
         },
         {
-          path: path.purchase,
-          element: (
-            <MainLayout>
-              <Purchase />
-            </MainLayout>
-          )
-        },
-        {
+          // Chi tiết đơn không nằm trong khung tài khoản: như Shopee, trang này dùng hết chiều rộng
           path: path.purchaseDetail,
           element: (
             <MainLayout>

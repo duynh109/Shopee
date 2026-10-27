@@ -32,6 +32,11 @@ export const rateSale = (original: number, sale: number) => {
 export const hasDiscount = (priceBeforeDiscount: number | null, price: number): priceBeforeDiscount is number =>
   priceBeforeDiscount !== null && priceBeforeDiscount > price
 
+// yyyy-MM-dd theo giờ máy, đúng định dạng của <input type="date"> và LocalDate ở BE. Không dùng toISOString():
+// nó đổi sang UTC, nên ở múi giờ +7 thì từ 0h đến 7h sáng nó trả ngày hôm qua
+export const toISODate = (date: Date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+
 export const removeSpecialCharacter = (str: string) =>
   // eslint-disable-next-line no-useless-escape
   str.replace(/!|@|%|\^|\*|\(|\)|\+|\=|\<|\>|\?|\/|,|\.|\:|\;|\'|\"|\&|\#|\[|\]|~|\$|_|`|-|{|}|\||\\/g, '')

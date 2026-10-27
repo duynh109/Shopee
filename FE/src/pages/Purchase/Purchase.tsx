@@ -39,9 +39,10 @@ export default function Purchase() {
   // Đơn đang được hỏi lý do huỷ. null = không hiện hộp thoại
   const [cancelling, setCancelling] = useState<Order | null>(null)
 
+  // Nền xám và khung `container` do UserLayout lo, trang này chỉ vẽ phần nội dung
   return (
-    <div className='bg-neutral-100 py-10'>
-      <div className='container'>
+    <>
+      <div>
         <div className='flex overflow-x-auto rounded-sm bg-white text-center shadow'>
           {purchaseTabs.map((tab) => (
             <Link
@@ -124,6 +125,6 @@ export default function Purchase() {
       </div>
 
       {cancelling && <CancelOrderDialog order={cancelling} onClose={() => setCancelling(null)} />}
-    </div>
+    </>
   )
 }
