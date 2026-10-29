@@ -730,7 +730,8 @@ lại bằng mật khẩu thì bình thường.
 Một lần đổi token chạy **3 câu SQL**: `select … for update` (kèm user), `insert` token mới, `update` thu hồi
 token cũ (ghi lúc commit). Không có câu `select users` nào vì user đã nạp kèm ở câu đầu.
 
-**Ba chỗ dễ sai** — đã đo bằng cách sửa tạm cho sai rồi khôi phục:
+**Ba chỗ dễ sai** — đã đo bằng cách sửa tạm cho sai rồi khôi phục. Cả ba ca "code đúng" là test trong
+`BE/src/test/java/com/duynh/shopee/auth/RefreshTokenIT.java`:
 
 | Chỗ | Code đúng | Làm sai thì |
 |---|---|---|
@@ -1414,7 +1415,7 @@ của `placeOrder`. Đã kiểm bằng cách gọi lẻ `decreaseStock`: Spring 
 `IllegalTransactionStateException: No existing transaction found for transaction marked with
 propagation 'mandatory'` và kho không bị đụng tới.
 
-**Đã kiểm khi chạy song song** (`DATABASE_DESIGN.md` §5): 20 người mua cùng lúc 5 món cuối → đúng 5
+**Có test chạy song song** (`StockConcurrencyIT`, `DATABASE_DESIGN.md` §5): 20 người mua cùng lúc 5 món cuối → đúng 5
 đơn; một user gửi cùng lúc 2 request đặt cùng một dòng giỏ → đúng 1 đơn, request kia `409`.
 
 **Số câu SQL** cho một đơn 2 món: **9** — 1 `SELECT users` (service cần `id` của người gọi), 1 `SELECT` giỏ
@@ -1556,7 +1557,7 @@ Khoá nằm ở `@Lock`, **không** viết `FOR UPDATE` trong chuỗi `@Query`: 
 `BadJpqlGrammarException: ... mismatched input 'FOR'` và app không khởi động. Hibernate tự dịch `@Lock`
 sang cú pháp của từng DB.
 
-Đã kiểm khi chạy song song: 5 request huỷ cùng một đơn → 1 × `200`, 4 × `409`, kho chỉ được cộng lại
+Có test chạy song song (`StockConcurrencyIT`): 5 request huỷ cùng một đơn → 1 × `200`, 4 × `409`, kho chỉ được cộng lại
 một lần. Bỏ `@Lock` thì cả 5 đều `200` và kho bị cộng gấp năm (`DATABASE_DESIGN.md` §5).
 
 **Đơn có sản phẩm đã bị gỡ vẫn huỷ được.** `@SQLRestriction` cũng áp vào câu `UPDATE` hoàn kho, nên với
@@ -1812,14 +1813,14 @@ nữa) vẫn nằm lại trên đĩa, chưa có việc dọn. Cũng chưa giới
 | Schema DB | ✅ Flyway: `V1__baseline.sql` dựng 8 bảng với tên ràng buộc tường minh, Hibernate chỉ `validate`; dữ liệu mẫu là migration riêng chỉ chạy ở profile `demo` (`DATABASE_DESIGN.md` mục 9) | Đổi schema = thêm file migration mới |
 | Entity & DTO | ✅ 8 entity khớp schema V1 (Hibernate `validate` lúc khởi động); mọi response là DTO (§2), không trả entity | — |
 | Entity CartItem | ✅ Entity + 5 endpoint, `UNIQUE(user_id, product_id)`, quyền sở hữu ở tầng service | — |
-| Entity Order / OrderItem | ✅ Entity + 4 endpoint §8, đã kiểm cả chạy song song (`DATABASE_DESIGN.md` §5) | — |
+| Entity Order / OrderItem | ✅ Entity + 4 endpoint §8, có test chạy song song (`StockConcurrencyIT`, `DATABASE_DESIGN.md` §5) | — |
 | Máy trạng thái đơn | ✅ `PUT /api/admin/orders/{id}/status`: đủ 25 cặp chuyển, huỷ thì hoàn kho, COD giao xong thành `PAID`, khoá chung dòng với khách huỷ (§9.1) | — |
 | API quản trị | ✅ Đơn hàng, user, danh mục, sản phẩm, upload ảnh | — |
 | Dọn giỏ khi gỡ sản phẩm | ✅ `ProductDeletedEvent` → `CartService.onProductDeleted`, một câu `DELETE`, cùng transaction (§5.3) | — |
 | Upload ảnh | ✅ `MultipartFile`, kiểm magic number, tên UUID, tối đa 1MB → `413`, phục vụ ở `/images/**` (§9.4) | File không dùng tới vẫn nằm trên đĩa; chuyển object storage khi chạy nhiều server |
 | Phân trang / lọc | ✅ `GET /api/products` (`Pageable` + `Specification`), `GET /api/orders` và `GET /api/admin/orders` (`Pageable` + lọc `status`), `GET /api/admin/users` | — |
 | Tranh chấp ràng buộc `UNIQUE` | ✅ Hai request cùng lúc cùng đụng một `UNIQUE` (`users.email`, `categories.name`, `cart_items(user_id, product_id)`, `orders.order_code`): request đến sau nhận `409`, thử lại là đúng; các vi phạm ràng buộc khác vẫn `500` (§1.6) | — |
-| Kiểm thử tự động | ⚠️ Chỉ có test `contextLoads` mặc định; các phép đo trong tài liệu chạy bằng request thật, script không nằm trong repo | Viết test tích hợp, chạy trên CI |
+| Kiểm thử tự động | ✅ BE: test tích hợp gọi HTTP thật trên MySQL do Testcontainers dựng (`*IT`, `./mvnw verify`) — migration và seed, xác thực, refresh token kể cả đổi song song, phân quyền hai tầng, máy trạng thái đơn, tồn kho và huỷ đơn song song; test đơn vị cho 25 cặp chuyển trạng thái. FE: Vitest cho hàm tiện ích, luật validate, cache khi đăng xuất. E2E: Playwright một luồng mua hàng trên hệ thống dựng bằng Docker Compose. GitHub Actions chạy cả ba ở mỗi lần push | E2E mới có luồng mua hàng chính |
 
 ---
 

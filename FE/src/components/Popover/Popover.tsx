@@ -60,7 +60,7 @@ export default function Popover({
             >
               <span
                 ref={arrowRef}
-                className='border-x-transparent border-t-transparent border-b-white border-[11px] translate-y-[-94%] z-10'
+                className='z-10 translate-y-[-94%] border-[11px] border-x-transparent border-b-white border-t-transparent'
                 style={{
                   position: 'absolute',
                   left: middlewareData.arrow?.x,

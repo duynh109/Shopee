@@ -40,3 +40,7 @@ pnpm-debug.log*
 .playwright-mcp/
 
 .env
+
+### E2E (Playwright: kết quả và báo cáo mỗi lần chạy) ###
+e2e/test-results/
+e2e/playwright-report/

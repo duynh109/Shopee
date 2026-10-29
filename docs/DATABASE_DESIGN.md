@@ -741,8 +741,10 @@ phải xếp hàng suốt cả transaction đặt hàng.
 
 ### Đã đo: bắn request song song vào code thật
 
-Các request được giữ ở một vạch xuất phát chung (`threading.Barrier`) rồi cùng gửi đi. Mỗi cơ chế được
-chạy hai lần: với code thật, rồi với bản **tạm làm sai** (sửa trong lúc test, khôi phục ngay sau đó).
+Bốn kịch bản dưới đây là test `BE/src/test/java/com/duynh/shopee/order/StockConcurrencyIT.java`, chạy mỗi lần
+`./mvnw verify` và trên CI. Các request được giữ ở một vạch xuất phát chung (`CountDownLatch`, xem
+`support/Concurrently.java`) rồi cùng gửi đi. Cột "Tạm làm sai" là kết quả khi sửa code cho sai rồi chạy lại,
+khôi phục ngay sau đó: đó là bằng chứng test bắt được lỗi, không chỉ chạy qua.
 
 | Kịch bản | Cơ chế bảo vệ | Code thật | Tạm làm sai |
 |---|---|---|---|
