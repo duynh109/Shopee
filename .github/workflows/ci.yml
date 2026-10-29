@@ -16,8 +16,8 @@ jobs:
       run:
         working-directory: BE
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '21'
@@ -25,7 +25,7 @@ jobs:
       - run: ./mvnw -B verify
       - name: Lưu báo cáo test khi hỏng
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: be-test-reports
           path: |
@@ -38,8 +38,8 @@ jobs:
       run:
         working-directory: FE
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -54,7 +54,7 @@ jobs:
     needs: [backend, frontend]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Tạo BE/.env với secret ngẫu nhiên (chỉ sống trong lần chạy này)
         run: |
           printf 'DB_PASSWORD=%s\nJWT_SECRET=%s\n' "$(openssl rand -hex 16)" "$(openssl rand -base64 64 | tr -d '\n')" > BE/.env
@@ -68,7 +68,7 @@ jobs:
           done
           docker compose --env-file BE/.env logs be
           exit 1
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -82,7 +82,7 @@ jobs:
         if: failure()
         run: docker compose --env-file BE/.env logs > e2e/compose.log
       - if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: e2e-report
           path: |
