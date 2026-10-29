@@ -1,5 +1,6 @@
-# Chạy cả hệ thống bằng một lệnh:  docker compose up --build
-# Cần file .env ở thư mục gốc repo (chép từ .env.example) chứa DB_PASSWORD và JWT_SECRET.
+# Chạy cả hệ thống bằng một lệnh:  docker compose --env-file BE/.env up --build
+# Secret lấy từ BE/.env (chép từ BE/.env.example), dùng chung với lúc chạy BE bằng ./mvnw. Compose chỉ tự đọc .env ở
+# thư mục gốc, nên phải chỉ file bằng --env-file; quên cờ đó thì compose dừng ngay và báo biến thiếu.
 # Mở http://localhost:3000. Lần đầu app tự dựng schema và nạp dữ liệu mẫu (Flyway, profile demo).
 name: shopee
 
@@ -10,7 +11,7 @@ services:
       MYSQL_DATABASE: shopee_db
       # App dùng user riêng chỉ có quyền trên shopee_db; mật khẩu root sinh ngẫu nhiên, không ai cần biết.
       MYSQL_USER: shopee
-      MYSQL_PASSWORD: ${DB_PASSWORD:?Thiếu DB_PASSWORD — chép .env.example thành .env rồi điền}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?Thiếu DB_PASSWORD — chép BE/.env.example thành BE/.env, chạy với --env-file BE/.env}
       MYSQL_RANDOM_ROOT_PASSWORD: "yes"
     volumes:
       - db-data:/var/lib/mysql
@@ -31,8 +32,8 @@ services:
       # Biến môi trường đè lên application.properties: "db" là tên service ở trên, Docker tự phân giải ra IP.
       SPRING_DATASOURCE_URL: jdbc:mysql://db:3306/shopee_db
       SPRING_DATASOURCE_USERNAME: shopee
-      DB_PASSWORD: ${DB_PASSWORD:?Thiếu DB_PASSWORD — chép .env.example thành .env rồi điền}
-      JWT_SECRET: ${JWT_SECRET:?Thiếu JWT_SECRET — chép .env.example thành .env rồi điền}
+      DB_PASSWORD: ${DB_PASSWORD:?Thiếu DB_PASSWORD — chép BE/.env.example thành BE/.env, chạy với --env-file BE/.env}
+      JWT_SECRET: ${JWT_SECRET:?Thiếu JWT_SECRET — chép BE/.env.example thành BE/.env, chạy với --env-file BE/.env}
     volumes:
       # Ảnh upload nằm ngoài container, nên tạo lại container (kể cả khi build image mới) vẫn còn ảnh.
       - uploads:/app/uploads

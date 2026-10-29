@@ -1,6 +1,7 @@
 import { createContext, useEffect, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { LocalStorageEventTarget, getAccessTokenFromLS, getProfileFromLS } from '../utils/auth'
+import { isPublicQuery } from '../utils/queryCache'
 import { User } from '../types/user.type'
 
 interface AppContextInterface {
@@ -19,10 +20,6 @@ const initialAppContext: AppContextInterface = {
 
 export const AppContext = createContext<AppContextInterface>(initialAppContext)
 
-// Query của dữ liệu công khai, ai xem cũng như nhau: giữ lại khi phiên bị xoá. Query nào không có tên ở đây đều bị
-// coi là dữ liệu riêng của người đang đăng nhập và bị xoá — thêm query mới mà quên khai thì chỉ phải tải lại, không lộ.
-const PUBLIC_QUERY_KEYS = ['products', 'product', 'categories']
-
 export const AppProvider = ({ children }: { children: React.ReactNode }) => {
   const queryClient = useQueryClient()
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(initialAppContext.isAuthenticated)
@@ -31,13 +28,13 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
   // Phiên bị xoá (đăng xuất, hoặc refresh token hỏng) thì đưa giao diện về trạng thái chưa đăng nhập; ProtectedRoute
   // tự chuyển về /login.
   // - Xoá dữ liệu riêng (giỏ hàng, đơn, hồ sơ) để người đăng nhập sau không thấy dữ liệu của người trước.
-  // - KHÔNG xoá dữ liệu công khai: trang đang mở (danh sách sản phẩm) vẫn giữ query đó, mà query bị xoá khỏi cache thì
+  // - KHÔNG xoá dữ liệu công khai (utils/queryCache.ts): trang đang mở (danh sách sản phẩm) vẫn giữ query đó, mà query bị xoá khỏi cache thì
   //   trang không tự tải lại, hiện trắng tới khi người dùng F5.
   useEffect(() => {
     const reset = () => {
       setIsAuthenticated(false)
       setProfile(null)
-      queryClient.removeQueries({ predicate: (query) => !PUBLIC_QUERY_KEYS.includes(query.queryKey[0] as string) })
+      queryClient.removeQueries({ predicate: (query) => !isPublicQuery(query.queryKey) })
     }
     LocalStorageEventTarget.addEventListener('clearLS', reset)
     return () => LocalStorageEventTarget.removeEventListener('clearLS', reset)

@@ -1,0 +1,11 @@
+{
+  "name": "shopee-e2e",
+  "private": true,
+  "description": "Kịch bản E2E chạy trên trình duyệt thật, đối với cả hệ thống dựng bằng docker compose",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1"
+  }
+}

@@ -382,11 +382,12 @@ kèm Kubernetes, và Kubernetes tự nó đã là một thứ cần học riêng
    vòng, lỗi theo RFC 9457.
 2. **Mấy món Level 1 có giá trị học cao nhất — xong ở v1:** chữa N+1 (1.1), index đặt theo số đo `EXPLAIN`
    chứ không theo cảm tính (`DATABASE_DESIGN.md` §3.6), race condition tồn kho và huỷ đơn đã thử bằng
-   request song song (`DATABASE_DESIGN.md` §5). Ảnh vẫn lưu trên đĩa (1.3) — đủ cho một server.
+   request song song, nay là test tự động (`DATABASE_DESIGN.md` §5). Ảnh vẫn lưu trên đĩa (1.3) — đủ cho một server.
 3. **Schema quản lý bằng Flyway migration**, dữ liệu mẫu nạp theo profile (`DATABASE_DESIGN.md` mục 9); cả hệ
-   thống chạy bằng `docker compose up`. **Tiếp theo:** test tự động chạy trên CI (hiện chỉ có test
-   `contextLoads` mặc định; các số đo trong tài liệu lấy từ script gọi API thật, không nằm trong repo), ảnh trên
-   object storage (1.3), rồi Redis cache (1.2) — những thứ gần như chắc chắn gặp khi đi làm.
+   thống chạy bằng `docker compose up`. Test tích hợp chạy trên MySQL thật (Testcontainers), kể cả các ca
+   request song song, cùng test FE và một luồng end-to-end, chạy trên GitHub Actions ở mỗi lần push.
+   **Tiếp theo:** ảnh trên object storage (1.3), rồi Redis cache (1.2) — những thứ gần như chắc chắn gặp khi
+   đi làm.
 4. **Level 3 trở lên:** chỉ đụng đến khi muốn học có chủ đích, không phải vì dự án cần.
 
 Giá trị thật của tài liệu này không nằm ở việc làm hết, mà ở chỗ khi phỏng vấn hay khi gặp vấn đề thật,
