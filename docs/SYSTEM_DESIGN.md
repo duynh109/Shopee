@@ -86,7 +86,7 @@ Cách xử lý — dự án dùng cả ba, mỗi cách ở chỗ hợp với nó
   đơn có phân trang (`API_SPEC.md` §8.2)
 
 Đã đo trước khi chữa: 5 sản phẩm thuộc 4 danh mục tốn 5 câu SQL, giỏ 4 món tốn 8 câu. Sau khi chữa, mỗi
-API đọc chỉ còn 1–4 câu bất kể bao nhiêu dòng (số đo ở `API_SPEC.md` §3.4 và `API_SPEC.md` §8.2).
+API đọc chỉ còn 1–4 câu bất kể bao nhiêu dòng (số đo ở `API_SPEC.md` §6.4, §7.1 và §8.2).
 
 > Nguyên tắc phòng bệnh: đặt tất cả quan hệ là `FetchType.LAZY` (mặc định của `@OneToMany`, nhưng
 > `@ManyToOne` mặc định là `EAGER` — nhớ đổi), rồi chủ động fetch những gì cần ở từng truy vấn.
@@ -122,10 +122,14 @@ Ba cách, từ tệ đến tốt:
 
 Dự án học thì lưu thư mục local cũng được, nhưng biết trước giới hạn để không bất ngờ.
 
-**Trạng thái trong code v1:** đang dùng cách 2 — thư mục `BE/uploads/`, DB chỉ lưu URL
-(`API_SPEC.md` §9.4). Mọi thao tác đọc/ghi file đi qua một class duy nhất là `ImageStorageService`, phần
-phục vụ ảnh nằm ở `WebConfig`. Chuyển sang object storage thì chỉ sửa hai chỗ đó; URL ảnh cũ đã lưu
-trong DB (`users.avatar`, `products.image`, `product_images.url`) thì phải đổi bằng một câu `UPDATE`.
+**Trạng thái trong code v1:** đang dùng cách 2 — thư mục `BE/uploads/` (trong `docker-compose.yml` là volume
+`uploads`, nên tạo lại container không mất ảnh), DB lưu URL đầy đủ (`API_SPEC.md` §9.4). Mọi thao tác ghi file
+đi qua `ImageStorageService`; phần phục vụ ảnh nằm ở `WebConfig`, tìm ở thư mục upload trước rồi tới ảnh của dữ
+liệu mẫu đóng sẵn trong jar (`seed/images`, chỉ khi bật profile `demo`). Chuyển sang object storage thì sửa hai
+class đó và đưa cả ảnh mẫu lên bucket. URL đã lưu trong DB (`users.avatar`, `products.image`,
+`product_images.url`, `order_items.product_image`) phải đổi bằng migration, kể cả dòng của dữ liệu mẫu, vì
+placeholder `${image-base-url}` chỉ được thay một lần lúc migration seed chạy. Lưu key (`abc.jpg`) thay cho URL
+đầy đủ thì lần đổi nơi lưu sau chỉ còn là đổi cấu hình.
 
 ### 1.4. Connection pool
 
@@ -161,7 +165,8 @@ Khi hệ thống lỗi lúc 2 giờ sáng, thứ duy nhất cứu bạn là log.
 
 Vẫn deploy một app, nhưng code được chia thành các module có **ranh giới rõ ràng**.
 
-Package của dự án chia theo nghiệp vụ (`auth`, `user`, `category`, `product`, `cart`, `order`, `storage`) chứ
+Package của dự án chia theo nghiệp vụ (`auth`, `user`, `category`, `product`, `cart`, `order`, `storage`, cộng vài package dùng chung: `config`,
+`exception`, `common`, `validation`) chứ
 không chia theo tầng kỹ thuật (`controllers/`, `services/`, `repositories/`). Cách chia theo nghiệp vụ tốt hơn
 vì mọi thứ liên quan đến một tính năng nằm cạnh nhau, và về sau muốn tách ra thành service riêng thì
 chỉ việc bê cả thư mục đi.
@@ -378,8 +383,10 @@ kèm Kubernetes, và Kubernetes tự nó đã là một thứ cần học riêng
 2. **Mấy món Level 1 có giá trị học cao nhất — xong ở v1:** chữa N+1 (1.1), index đặt theo số đo `EXPLAIN`
    chứ không theo cảm tính (`DATABASE_DESIGN.md` §3.6), race condition tồn kho và huỷ đơn đã thử bằng
    request song song (`DATABASE_DESIGN.md` §5). Ảnh vẫn lưu trên đĩa (1.3) — đủ cho một server.
-3. **Tiếp theo:** test tự động (hiện mỗi bước được kiểm bằng script gọi API thật, chưa nằm trong repo), Flyway
-   migration, rồi Redis cache — ba thứ gần như chắc chắn gặp khi đi làm.
+3. **Schema quản lý bằng Flyway migration**, dữ liệu mẫu nạp theo profile (`DATABASE_DESIGN.md` mục 9); cả hệ
+   thống chạy bằng `docker compose up`. **Tiếp theo:** test tự động chạy trên CI (hiện chỉ có test
+   `contextLoads` mặc định; các số đo trong tài liệu lấy từ script gọi API thật, không nằm trong repo), ảnh trên
+   object storage (1.3), rồi Redis cache (1.2) — những thứ gần như chắc chắn gặp khi đi làm.
 4. **Level 3 trở lên:** chỉ đụng đến khi muốn học có chủ đích, không phải vì dự án cần.
 
 Giá trị thật của tài liệu này không nằm ở việc làm hết, mà ở chỗ khi phỏng vấn hay khi gặp vấn đề thật,

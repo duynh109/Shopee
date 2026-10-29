@@ -1,30 +1,31 @@
 # Shopee Clone — monorepo
 
 ```
-docs/   thiết kế dùng chung cho cả hai nửa — ĐỌC TRƯỚC KHI SỬA BẤT KỲ ĐÂU
-BE/     Spring Boot 4.1 / Java 21 / MySQL — port 8081
-FE/     React + TypeScript + Vite — port 3000
+docs/                thiết kế dùng chung cho cả hai nửa — ĐỌC TRƯỚC KHI SỬA BẤT KỲ ĐÂU
+BE/                  Spring Boot 4.1 / Java 21 / MySQL / Flyway — port 8081
+FE/                  React + TypeScript + Vite — port 3000
+docker-compose.yml   MySQL + BE + FE (Dockerfile ở BE/ và FE/)
 ```
 
 ## Đọc `docs/` trước
 
 | File | Nội dung |
 |---|---|
-| `docs/API_SPEC.md` | Contract API giữa BE và FE. **§1.10 là bảng quyền chính thức**: cả 29 endpoint, ai gọi được, đã làm chưa, và **màn FE nào gọi tới** kèm route của màn đó. §11 là lộ trình 9 bước. §12 ghi cách FE nối với API. |
-| `docs/DATABASE_DESIGN.md` | Schema v1 (8 bảng) và lý do đằng sau từng quyết định |
-| `docs/SYSTEM_DESIGN.md` | Lộ trình mở rộng, chưa cần cho v1 |
+| `docs/API_SPEC.md` | Contract API giữa BE và FE. **§1.10 là bảng quyền chính thức**: cả 29 endpoint, ai gọi được, đã làm chưa, và **màn FE nào gọi tới** kèm route của màn đó. §10 là tình trạng hiện thực từng hạng mục. §12 ghi cách FE nối với API. |
+| `docs/DATABASE_DESIGN.md` | Schema v1 (8 bảng) và lý do đằng sau từng quyết định; mục 9 là Flyway và dữ liệu mẫu |
+| `docs/SYSTEM_DESIGN.md` | Lộ trình mở rộng khi lượng truy cập tăng |
 
-## Đang làm tới đâu
+## Trạng thái
 
-**Nguồn duy nhất về tiến độ:** cột trạng thái ở `docs/API_SPEC.md` **§10** (từng hạng mục) và **§11**
-(lộ trình 9 bước, bước nào xong có dấu ✅). §1.10 có cột `BE` cho từng endpoint. Đọc ba chỗ đó trước
-khi làm gì — đừng suy ra tiến độ từ code, và khi làm xong một bước thì cập nhật lại cả ba.
+BE đủ 29/29 endpoint (cột `BE` ở `docs/API_SPEC.md` §1.10), FE người mua xong, chưa có màn admin. §10 đối chiếu
+từng hạng mục với code; cột "Giới hạn / việc tiếp theo" là phần còn thiếu. Đừng suy ra trạng thái từ code: thêm hay
+đổi gì thì cập nhật §1.10 và §10 cùng lúc. Docs mô tả repo hiện tại — không ghi lịch sử làm ("ở bước N", ngày làm).
 
 ## Thứ tự làm việc
 
-**Làm BE cho đúng và đầy đủ trước, FE sửa sau.** BE v1 và FE cho người mua đều đã xong: FE gọi đúng contract
-mới (DTO trần, field `camelCase`, lỗi `ProblemDetail`). Chưa có màn admin (§1.10 ⁶). `docs/API_SPEC.md` §12 ghi
-cách FE nối với API. Thêm hay đổi API thì cập nhật cột "Màn FE" ở §1.10 cùng lúc.
+**`docs/API_SPEC.md` là contract chung: đổi API thì sửa spec và BE trước, rồi FE theo.** FE gọi đúng contract đó
+(DTO trần, field `camelCase`, lỗi `ProblemDetail`); cách nối ở §12. Chưa có màn admin (§1.10 ⁶). Thêm hay đổi API
+thì cập nhật cột "Màn FE" ở §1.10 cùng lúc.
 
 ## Quy ước dễ sai
 
@@ -38,8 +39,9 @@ cách FE nối với API. Thêm hay đổi API thì cập nhật cột "Màn FE"
 - **Phân quyền có hai tầng.** `SecurityConfig` chỉ trả lời "đã đăng nhập chưa, role gì".
   Còn "bản ghi này có thuộc về user đang gọi không" là việc của tầng service, và trả **`404` chứ không
   phải `403`**. Xem chú thích ² ở §1.10.
-- Project dùng **Jackson 3** (`tools.jackson.databind`), **không** phải `com.fasterxml.jackson`.
-  Jackson 2 có trên classpath nhưng chỉ ở scope `runtime` do `jjwt-jackson` kéo vào.
+- Project dùng **Jackson 3** (`tools.jackson.databind`), **không** phải `com.fasterxml.jackson.databind`.
+  Jackson 2 có trên classpath nhưng chỉ ở scope `runtime` do `jjwt-jackson` kéo vào. Riêng annotation
+  (`@JsonProperty`, `@JsonIgnore`…) Jackson 3 vẫn để ở `com.fasterxml.jackson.annotation` — import đó là đúng.
 - `HttpStatus.UNPROCESSABLE_CONTENT` (không dùng `UNPROCESSABLE_ENTITY` — đã deprecated ở Spring 7).
 - **Service gọi service của module khác, không gọi repository của nó.** Ví dụ `OrderService` trừ kho qua
   `ProductService.decreaseStock()`, không inject `ProductRepository`. Hai ngoại lệ đã biết, kèm lý do, ở
@@ -50,7 +52,17 @@ cách FE nối với API. Thêm hay đổi API thì cập nhật cột "Màn FE"
 - **`spring.jpa.open-in-view=false`**: DTO phải dựng xong bên trong method `@Transactional` của service.
   Quên `@Transactional` ở một hàm đọc có quan hệ lazy thì nhận `LazyInitializationException` → `500`.
 - **Secret không bao giờ ghi vào `application.properties`** — file đó chỉ có `${JWT_SECRET}`, `${DB_PASSWORD}`,
-  không giá trị mặc định. Giá trị thật ở `BE/.env` (gitignore). Không in nội dung `.env` ra terminal hay chat.
+  không giá trị mặc định. Giá trị thật ở `BE/.env` (chạy `./mvnw`) và `.env` ở gốc repo (chạy Docker), cả hai đều
+  gitignore. Không in nội dung `.env` ra terminal hay chat.
+- **Schema do Flyway quản lý** (`BE/src/main/resources/db/migration`), Hibernate chỉ `ddl-auto=validate`. Đổi schema
+  = thêm file `V<n>__mo_ta.sql` mới (kèm sửa entity), **không bao giờ sửa file đã chạy**: checksum lệch thì app
+  không khởi động. `validate` bắt entity lệch bảng/cột/kiểu, nhưng **không** kiểm index hay `CHECK` — thêm giá trị
+  enum mà quên migration `DROP/ADD CHECK` thì chỉ lỗi `500` lúc ghi (`docs/DATABASE_DESIGN.md` §3.6).
+- **Dữ liệu mẫu là migration riêng ở `db/seed`, chỉ chạy ở profile `demo`** (version xen kẽ: `V1_1`, sau này
+  `V2_1`...). `./mvnw spring-boot:run` tự bật `demo` (thuộc tính `spring-boot.run.profiles` trong `pom.xml`), test
+  cũng `@ActiveProfiles("demo")`. DB dev đã nạp seed thì luôn chạy với `demo`: khi đã có `V2`, thiếu profile là
+  Flyway báo migration 1.1 "not resolved locally" và app không khởi động. Seed viết `${image-base-url}` thay cho
+  địa chỉ ảnh.
 - **FE: `priceBeforeDiscount` có thể `null`** (sản phẩm và dòng đơn hàng; `null` = không giảm giá). Dùng
   `hasDiscount()` ở `FE/src/utils/utils.ts` trước khi hiện giá gạch hay `-x%`: `formatCurrency(null)` ra `₫0` còn
   `rateSale` ra `-Infinity`.
@@ -62,10 +74,14 @@ cách FE nối với API. Thêm hay đổi API thì cập nhật cột "Màn FE"
 ## Chạy
 
 ```bash
+# Cả hệ thống bằng Docker (MySQL + BE + FE, .env ở gốc repo — khác BE/.env)
+cp .env.example .env && docker compose up --build
+
 # BE
 cd BE && cp .env.example .env            # một lần: điền DB_PASSWORD, JWT_SECRET
-cd BE && ./mvnw spring-boot:run          # cần JAVA_HOME trỏ tới JDK 21
+cd BE && ./mvnw spring-boot:run          # cần JAVA_HOME trỏ tới JDK 21; profile demo, DB tự tạo + migrate
 cd BE && ./mvnw clean compile            # kiểm tra compile thật
+cd BE && ./mvnw test                     # cần MySQL dev đang chạy: test khởi động app trên shopee_db, profile demo
 
 # FE
 cd FE && npm run dev
@@ -82,6 +98,6 @@ cd FE && npm run lint
 
 ## Cách làm việc mà chủ repo muốn
 
-BE là phương tiện để học Java — **giải thích, đừng chỉ đưa code**. Nói rõ sửa file nào, nội dung gì,
-và **vì sao**. Khi làm xong một việc thì **chạy thật và curl kiểm chứng**, in bảng kết quả, đừng chỉ
-báo "đã xong".
+Mục tiêu chính là một sản phẩm hoàn chỉnh để demo; học Java là mục tiêu phụ. Claude viết code (cả BE lẫn FE), rồi
+**giải thích kiến thức, kỹ thuật, công nghệ đã dùng**: sửa file nào, vì sao chọn cách đó, cái bẫy nó tránh. Khi
+làm xong một việc thì **chạy thật và curl kiểm chứng**, in bảng kết quả, đừng chỉ báo "đã xong".

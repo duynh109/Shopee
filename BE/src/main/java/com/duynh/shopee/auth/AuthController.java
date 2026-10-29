@@ -30,8 +30,9 @@ public class AuthController {
     }
 
     /**
-     * Với JWT thuần, BE không huỷ được token đã phát. Endpoint này để FE có chỗ gọi
-     * rồi tự xoá token đã lưu. Vẫn yêu cầu đăng nhập để FE biết token còn hợp lệ hay không.
+     * Đăng xuất: thu hồi refresh token gửi trong body (API_SPEC §3.3).
+     * Công khai, không cần access token — lúc bấm đăng xuất access token có thể đã hết hạn, còn ai cầm
+     * refresh token thì vốn đã dùng được nó. Access token đang cầm vẫn chạy tới khi hết hạn (tối đa 15 phút).
      */
     @PostMapping("/logout")
     @ResponseStatus(HttpStatus.NO_CONTENT)

@@ -28,6 +28,9 @@
     </scm>
     <properties>
         <java.version>21</java.version>
+        <!-- ./mvnw spring-boot:run chạy với profile "demo" (có dữ liệu mẫu). Chỉ ảnh hưởng lệnh đó: file jar khi
+             deploy không có profile nào. Muốn chạy không profile: ./mvnw spring-boot:run -Dspring-boot.run.profiles= -->
+        <spring-boot.run.profiles>demo</spring-boot.run.profiles>
     </properties>
     <dependencies>
         <dependency>
@@ -45,6 +48,16 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webmvc</artifactId>
+        </dependency>
+        <!-- Flyway: dựng và nâng schema bằng các file SQL trong src/main/resources/db/migration.
+             Spring Boot 4 cần starter để có auto-config; flyway-mysql là phần hỗ trợ riêng cho MySQL. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-flyway</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-mysql</artifactId>
         </dependency>
 
         <dependency>

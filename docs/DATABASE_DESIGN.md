@@ -11,7 +11,7 @@
 
 | Phiên bản | Gồm gì |
 |---|---|
-| **v1 — làm ngay** | 8 bảng: `users`, `categories`, `products`, `product_images`, `cart_items`, `orders`, `order_items`, `refresh_tokens` |
+| **v1 — đã có** | 8 bảng: `users`, `categories`, `products`, `product_images`, `cart_items`, `orders`, `order_items`, `refresh_tokens` |
 | **v2 — nâng cấp** | `addresses`, `product_variants`, `reviews`, `vouchers` |
 | **v3 — mô hình sàn** | `shops`, `payments`, `shipments`, `inventory_logs`, `notifications` |
 
@@ -116,10 +116,11 @@ Tách rời như vậy còn mang lại hai lợi ích:
 1. **Đơn hàng tự đứng vững một mình.** Nhờ snapshot (mục 4.1), `order_items` đã chép sẵn tên, ảnh, giá —
    đơn hàng không cần biết nó sinh ra từ đâu, cũng không phụ thuộc vào việc sản phẩm sau này còn tồn tại
    hay không.
-2. **Giỏ hàng không phải nguồn duy nhất.** Nút "Mua ngay" ở trang chi tiết sản phẩm đặt hàng thẳng, không
-   qua giỏ. Nếu `orders` bị buộc chặt vào `cart_items` thì luồng này không làm được, hoặc phải tạo dòng
-   giỏ hàng giả rồi xoá ngay. (v1 chưa có nút này — `POST /api/orders` nhận `cartItemIds` — nhưng schema
-   không chặn đường thêm nó.)
+2. **Giỏ hàng không nhất thiết là nguồn duy nhất.** Luồng đặt hàng thẳng từ trang sản phẩm, không qua giỏ, là
+   chuyện thường ở các sàn. Nếu `orders` bị buộc chặt vào `cart_items` thì luồng đó không làm được, hoặc phải
+   tạo dòng giỏ hàng giả rồi xoá ngay. (Nút "Mua ngay" của FE hiện vẫn đi qua giỏ: thêm vào giỏ rồi sang trang
+   đặt hàng chỉ với dòng vừa thêm, vì `POST /api/orders` nhận `cartItemIds`. Schema không chặn đường thêm luồng
+   đặt thẳng.)
 
 Ví von: giỏ hàng như cái rổ nhựa trong siêu thị, đơn hàng như tờ hoá đơn in ở quầy. Hàng chuyển từ rổ sang
 hoá đơn, rồi rổ được trả về chỗ cũ. Tờ hoá đơn không có dòng nào ghi "hàng này lấy từ rổ số 7" — tự nó
@@ -129,17 +130,19 @@ hoá đơn, rồi rổ được trả về chỗ cũ. Tờ hoá đơn không có
 
 ## 3. Chi tiết từng bảng
 
-> **SQL trong mục này là bản thiết kế; schema thật do Hibernate sinh từ entity** (`ddl-auto=update`,
-> mục 9). Đã đối chiếu cả 8 bảng với `information_schema` của MySQL: cột, kiểu, `NULL`/`NOT NULL`,
-> `UNIQUE`, khoá ngoại và `CHECK` đều khớp, trừ ba khác biệt về hình thức:
+> **SQL trong mục này là bản thiết kế, viết cho dễ đọc; schema thật do Flyway dựng** từ
+> `BE/src/main/resources/db/migration/V1__baseline.sql` (mục 9). Tên ràng buộc và index trong V1 trùng với tên
+> trong SQL dưới đây (`fk_cart_user`, `uq_cart_item`, `idx_order_created`…). Ràng buộc nào ở đây viết gọn không
+> tên thì V1 đặt tên: `uq_user_email`, `uq_category_name`, `uq_order_code`, `ck_order_status`,
+> `ck_order_payment_method`, `ck_order_payment_status`. Khác biệt về hình thức:
 >
 > - Cột thời gian là `DATETIME(6)` (tới micro-giây), không phải `DATETIME`.
 > - Không có `DEFAULT` nào ở tầng DB. Giá trị ban đầu (`role = 'USER'`, `sold = 0`, `payment_status =
 >   'UNPAID'`…) do code gán lúc tạo entity.
-> - Tên ràng buộc và index do Hibernate tự đặt (`UK6dotkott2…`, `FK1lih5y2…`), trừ chỗ entity đặt tên
->   tường minh: `uq_cart_item`, `idx_order_user_status`, `idx_order_created`. Các tên `fk_…`/`uq_…` khác
->   trong SQL dưới đây chỉ để dễ đọc. Đặt tên tường minh cho mọi ràng buộc nên làm cùng lúc chuyển sang
->   Flyway — `ddl-auto=update` không đổi tên ràng buộc đã có.
+> - MySQL bắt mỗi khoá ngoại phải có một index bắt đầu bằng cột của nó. Chỗ nào SQL dưới đây chưa có, V1 khai
+>   thêm: `idx_cart_product`, `idx_item_product`, `idx_refresh_user`.
+> - `products` mới có `idx_product_category`; các index còn lại của bảng đó chưa tạo (§3.3).
+> - Mọi bảng `ENGINE = InnoDB`, bảng mã `utf8mb4` / `utf8mb4_0900_ai_ci` (phép tính byte ở §3.3 dựa vào đó).
 >
 > Khác biệt về **hành vi** thì chỉ có một, ghi ngay tại bảng đó: khoá ngoại `product_images.product_id`
 > không có `ON DELETE CASCADE` (§3.4).
@@ -244,11 +247,10 @@ thêm index) và tốn dung lượng. Chỉ đánh index cho cột thực sự h
 Ở đây: `category_id` (lọc theo danh mục), `price` (lọc khoảng giá + sắp xếp theo giá),
 `created_at` (sắp xếp mới nhất), và full-text cho ô tìm kiếm.
 
-**Trạng thái thực tế:** mới có index trên `category_id` — do MySQL tự tạo kèm khoá ngoại. Hai index
-`price` và `created_at` chưa tạo; khai bằng `@Table(indexes = {...})` trong entity là đủ, chưa làm vì
-dữ liệu còn nhỏ nên chưa đo được khác biệt. `FULLTEXT` thì JPA không khai được (phải chạy SQL tay) và
-hiện cũng **chưa có câu nào dùng tới**: ô tìm kiếm ở `API_SPEC.md` §5.1 làm bằng
-`LIKE '%từ khoá%'`, mà câu đó không tận dụng được full-text. Chỉ tạo khi đổi sang `MATCH ... AGAINST`.
+**Trạng thái thực tế:** mới có `idx_product_category`. Hai index `price` và `created_at` chưa tạo, vì
+dữ liệu còn nhỏ nên chưa đo được khác biệt; khi cần thì thêm bằng một migration. `FULLTEXT` hiện **chưa có
+câu nào dùng tới**: ô tìm kiếm ở `API_SPEC.md` §5.1 làm bằng `LIKE '%từ khoá%'`, mà câu đó không tận dụng
+được full-text. Chỉ tạo khi đổi sang `MATCH ... AGAINST`.
 
 > **Vì sao cần FULLTEXT cho tìm kiếm:** câu `WHERE name LIKE '%áo thun%'` **không dùng được index**
 > vì có dấu `%` ở đầu — MySQL buộc phải quét toàn bộ bảng. Vài nghìn dòng thì không sao, vài trăm nghìn
@@ -269,11 +271,10 @@ CREATE TABLE product_images (
 );
 ```
 
-**Khoá ngoại thật không có `ON DELETE CASCADE`** như SQL trên: `ProductImage.product` không mang
-`@OnDelete`, nên Hibernate sinh khoá ngoại thường. Không ảnh hưởng gì — sản phẩm chỉ bị xoá mềm nên dòng
+**Khoá ngoại thật (V1) không có `ON DELETE CASCADE`** như SQL trên, và `ProductImage.product` cũng không mang
+`@OnDelete`. Không ảnh hưởng gì — sản phẩm chỉ bị xoá mềm nên dòng
 `products` không bao giờ bị `DELETE`, còn ảnh bị gỡ khỏi album thì `orphanRemoval` xoá từng dòng
-(`API_SPEC.md` §5.4). Index trên `product_id` là index MySQL tự tạo kèm khoá ngoại, không phải
-`idx_image_product` khai riêng.
+(`API_SPEC.md` §5.4).
 
 `url` dài tối đa 255 kí tự, nên mỗi phần tử `images[]` trong `ProductRequest` mang
 `@Size(max = 255)` ngay trong dấu `< >`, cạnh `@NotBlank`, để kiểm **từng** URL. Thiếu nó thì URL dài
@@ -321,8 +322,8 @@ sớm cho người dùng, nhưng tồn kho chỉ thực sự bị trừ khi đ�
 liệu tạm. Ngược lại, khoá ngoại từ `orders` tới `users` **không** cascade: đơn hàng là dữ liệu giao dịch,
 phải giữ lại.
 
-JPA thuần **không** sinh được mệnh đề này — `@JoinColumn` chỉ tạo một `FOREIGN KEY` trơn, và xoá user sẽ
-bị MySQL chặn vì còn dòng giỏ hàng tham chiếu. Phải dùng annotation riêng của Hibernate:
+Mệnh đề này nằm trong V1. Thiếu nó thì xoá user bị MySQL chặn vì còn dòng giỏ hàng tham chiếu. Entity ghi
+lại cùng hành vi bằng annotation riêng của Hibernate (JPA thuần không có cách khai):
 
 ```java
 @ManyToOne(fetch = FetchType.LAZY, optional = false)
@@ -331,8 +332,8 @@ bị MySQL chặn vì còn dòng giỏ hàng tham chiếu. Phải dùng annotati
 private User user;
 ```
 
-Nó chỉ có tác dụng lúc bảng được **tạo mới**. `ddl-auto=update` không sửa khoá ngoại đã tồn tại, nên bỏ
-sót lúc đầu thì sau phải `ALTER TABLE` bằng tay.
+Schema do Flyway dựng, nên annotation này không tạo ra hay sửa được khoá ngoại nào: muốn đổi hành vi cascade
+thì viết migration `ALTER TABLE`, rồi sửa annotation cho khớp.
 
 **Không cần index riêng cho `user_id`.** Truy vấn hay chạy nhất là `WHERE user_id = ?` (lấy cả giỏ), và
 nó đã được `uq_cart_item (user_id, product_id)` phục vụ: index tổng hợp dùng được cho mọi truy vấn lọc
@@ -398,17 +399,17 @@ Index này **không tốn thêm gì**: khoá ngoại `user_id` đằng nào cũn
 kiểm bằng `information_schema.STATISTICS`, bảng `orders` chỉ có `PRIMARY`, `UNIQUE(order_code)`,
 `idx_order_user_status` và `idx_order_created` (ngay dưới), không có index `(user_id)` nào khác.
 
-**`idx_order_created (created_at)`** khai trong `@Table(indexes = ...)` của `Order`. Câu duy
+**`idx_order_created (created_at)`** khai trong V1 (và ghi lại ở `@Table(indexes = ...)` của `Order`). Câu duy
 nhất cần nó là admin xem mọi đơn (`API_SPEC.md` §9.2): `ORDER BY created_at DESC, id DESC LIMIT ?` mà
 không có `WHERE`. Đo bằng `EXPLAIN`:
 
 | Câu truy vấn | Kế hoạch MySQL chọn |
 |---|---|
-| Không lọc, bảng thật **169 dòng** | `ALL` + `Using filesort` — **bỏ qua index** |
+| Không lọc, bảng ở DB dev lúc đo, **169 dòng** | `ALL` + `Using filesort` — **bỏ qua index** |
 | Như trên, ép `FORCE INDEX (idx_order_created)` | `index`, `Backward index scan`, đọc 10 dòng, không filesort |
 | Không lọc, bảng nháp **50.000 dòng** (tạo `LIKE orders`, đo xong xoá) | Tự chọn `idx_order_created`, `Backward index scan`, đọc 10 dòng |
 | Bảng nháp 50.000 dòng, bỏ index đi | `ALL`, 49.742 dòng, `Using filesort` |
-| Lọc `status = 'CANCELLED'`, bảng thật | `idx_order_created` + `Using where` — đọc theo thời gian từ mới về cũ, lọc dần tới khi đủ 10 |
+| Lọc `status = 'CANCELLED'`, bảng ở DB dev lúc đo | `idx_order_created` + `Using where` — đọc theo thời gian từ mới về cũ, lọc dần tới khi đủ 10 |
 
 Hai điều rút ra:
 
@@ -455,16 +456,16 @@ thêm `@JdbcTypeCode(SqlTypes.VARCHAR)`:
 private OrderStatus status;
 ```
 
-Có annotation này thì Hibernate sinh `VARCHAR(20)` **kèm** một ràng buộc `CHECK (status IN (...))`
-liệt kê đủ các giá trị của enum. DB tự chặn giá trị lạ, kể cả khi sửa tay bằng SQL — thử
-`INSERT ... status = 'CANCELED'` (sai chính tả) nhận ngay `ERROR 3819 Check constraint 'orders_chk_3'
+Cột là `VARCHAR(20)` **kèm** một ràng buộc `CHECK (status IN (...))` liệt kê đủ các giá trị của enum (V1,
+tên `ck_order_status`). DB tự chặn giá trị lạ, kể cả khi sửa tay bằng SQL — thử
+`INSERT ... status = 'CANCELED'` (sai chính tả) nhận ngay `ERROR 3819 Check constraint 'ck_order_status'
 is violated`. Cả `ENUM` lẫn `VARCHAR + CHECK` đều khoá danh sách giá trị ở tầng DB; chọn cái sau vì
 nó là SQL chuẩn và đúng với schema ở trên.
 
-> **Cái bẫy khi thêm giá trị enum:** `ddl-auto=update` **không** sửa `CHECK` của bảng đã tồn tại.
-> Thêm một hằng mới vào `OrderStatus` rồi ghi nó xuống sẽ nhận đúng `ERROR 3819` như trên, qua Spring
-> thành `500`. Phải tự `ALTER TABLE orders DROP CHECK ...` rồi `ADD CHECK ...` với danh sách mới —
-> hoặc viết thành một migration khi đã chuyển sang Flyway (mục 9).
+> **Cái bẫy khi thêm giá trị enum:** thêm một hằng mới vào `OrderStatus` thì phải kèm một migration
+> `ALTER TABLE orders DROP CHECK ck_order_status` rồi `ADD CONSTRAINT ck_order_status CHECK (...)` với danh
+> sách mới. Quên thì app vẫn khởi động (`ddl-auto=validate` chỉ kiểm bảng, cột và kiểu, không kiểm `CHECK`),
+> và lần đầu ghi giá trị mới xuống nhận đúng `ERROR 3819` như trên, qua Spring thành `500`.
 
 ### 3.7. `order_items` — chi tiết đơn hàng
 
@@ -491,16 +492,16 @@ sang `products`. Vẫn giữ `product_id` để có đường dẫn quay về tr
 thì đọc từ các cột snapshot.
 
 **Trong entity, `product_id` vẫn là `@ManyToOne(fetch = LAZY)` — nhưng chỉ được gọi `getId()` trên
-nó.** Giữ quan hệ để Hibernate sinh khoá ngoại `fk_item_product`. Với `LAZY`, field đó là một proxy
+nó.** Giữ quan hệ cho khớp khoá ngoại `fk_item_product` của cột đó. Với `LAZY`, field đó là một proxy
 đã biết sẵn id, nên `getProduct().getId()` không chạy câu `SELECT` nào. Mọi getter khác (`getName()`,
 `getPrice()`...) buộc proxy xuống DB, và nếu sản phẩm đã bị xoá mềm thì `@SQLRestriction` giấu nó đi →
 `EntityNotFoundException` → `500` — đúng cái bẫy ở [`API_SPEC.md` §7.6](API_SPEC.md). Snapshot tồn tại
 chính là để không bao giờ cần đi đường đó.
 
-**Trạng thái thực tế:** không khai `idx_item_order` trong entity. MySQL tự tạo index kèm mỗi khoá
-ngoại, nên `order_items` đã có sẵn index trên `order_id` và trên `product_id` — giống `product_images`.
-`ON DELETE CASCADE` trên `order_id` do `@OnDelete(action = OnDeleteAction.CASCADE)` sinh ra (như
-`cart_items.user_id`, mục 3.5); đã kiểm: xoá một đơn thì dòng `order_items` của nó biến mất theo.
+**Index và cascade nằm trong V1:** `idx_item_order (order_id)` và `idx_item_product (product_id)` khai tường
+minh. `ON DELETE CASCADE` trên `order_id` cũng ở V1; `@OnDelete(action = OnDeleteAction.CASCADE)` trên
+`OrderItem.order` chỉ ghi lại cùng hành vi cho người đọc entity, như `cart_items.user_id` (mục 3.5). Đã kiểm:
+xoá một đơn thì dòng `order_items` của nó biến mất theo.
 
 Không lưu thành tiền từng dòng vì tính được ngay (`price × quantity`) và kết quả không đổi theo thời gian.
 Chỉ lưu sẵn những giá trị mà việc tính lại sau này sẽ cho ra kết quả **khác đi**.
@@ -630,12 +631,14 @@ Kinh điển: `0.1 + 0.2 = 0.30000000000000004`. Cộng dồn hàng nghìn dòng
 VND không có đơn vị nhỏ hơn 1 đồng → dùng `BIGINT` là gọn nhất. Nếu làm hệ thống đa tiền tệ (USD có cent)
 thì quy ước lưu theo **đơn vị nhỏ nhất** (lưu cent thay vì dollar), vẫn là số nguyên. Hoặc dùng `DECIMAL`.
 
-### 4.5. Mọi bảng đều có `created_at` / `updated_at`
+### 4.5. Bảng chính đều có `created_at` / `updated_at`
 
 Nghe thừa nhưng cực kỳ hữu ích khi debug ("đơn này tạo lúc nào?", "ai sửa giá sản phẩm hôm qua?").
-JPA có sẵn: `@CreatedDate`, `@LastModifiedDate` + `@EnableJpaAuditing` — khai báo một lần, tự động điền.
+Spring Data JPA có sẵn: `@CreatedDate`, `@LastModifiedDate` + `@EnableJpaAuditing` — khai báo một lần, tự động điền.
 
-Riêng `order_items` chỉ cần `created_at` vì nó không bao giờ bị sửa sau khi tạo.
+Ngoại lệ: `order_items` chỉ có `created_at` vì không bao giờ bị sửa sau khi tạo; `refresh_tokens` cũng chỉ có
+`created_at`, vì lần sửa duy nhất là thu hồi và `revoked_at` đã ghi luôn thời điểm đó; `product_images` không
+có cột thời gian nào.
 
 ### 4.6. Ràng buộc đặt ở tầng DB, không chỉ ở tầng code
 
@@ -852,14 +855,14 @@ Khi thêm bảng này, `quantity` và `price` **chuyển từ `products` xuống
 > 3. **Việc migration sau này tự nó là bài học giá trị** — di chuyển cột giữa các bảng trên hệ thống đã có
 >    dữ liệu, giữ API không gãy: đó chính là công việc hằng ngày khi đi làm.
 >
-> **Ba việc cần làm để migration sau này rẻ:**
+> **Ba việc đã làm sẵn để migration sau này rẻ:**
 >
-> - Dồn toàn bộ logic trừ/cộng kho vào **đúng một method** (`ProductService.decreaseStock()`). Khi cột
->   `quantity` chuyển xuống bảng variant, chỉ một chỗ phải sửa.
+> - Dồn toàn bộ logic trừ/cộng kho vào **một chỗ**: `ProductService.decreaseStock()` / `increaseStock()`. Khi
+>   cột `quantity` chuyển xuống bảng variant, chỉ hai method đó phải sửa.
 > - **Không trả entity thẳng ra API, luôn qua DTO.** DTO là lớp đệm: sau này `price` lấy từ đâu thì chỉ
 >   sửa chỗ map, client không cần biết.
-> - **Chuyển sang Flyway khi schema v1 ổn định**, rồi lấy chính việc thêm variant làm migration đầu tiên —
->   bài tập Flyway hoàn hảo vì có đủ: thêm bảng, di chuyển cột, chuyển dữ liệu cũ.
+> - **Quản lý schema bằng Flyway** (mục 9). V1 là baseline, nên variant sẽ là migration đầu tiên đổi dữ liệu
+>   đang có — bài tập Flyway hoàn hảo vì có đủ: thêm bảng, di chuyển cột, chuyển dữ liệu cũ.
 >
 > **Điều kiện kèm theo:** nếu làm variant, hãy làm **trước** voucher và thanh toán. Càng nhiều tính năng
 > dựng trên `products.quantity` thì càng khó gỡ.
@@ -922,10 +925,23 @@ Liệt kê để biết mình đang đứng ở đâu so với hệ thống th�
 Tám bảng ở mục 3, tuân thủ sáu nguyên tắc ở mục 4, xử lý tồn kho theo cách 1 ở mục 5, và luồng đặt hàng
 theo đúng thứ tự ở mục 6.
 
-Về cách tạo schema: v1 dùng `spring.jpa.hibernate.ddl-auto=update` — tiện lúc học vì Hibernate tự tạo
-bảng từ entity. Nhưng nó không quản lý được lịch sử thay đổi schema (không rollback được, không biết ai đổi
-gì lúc nào), không sửa được thứ đã tạo (khoá ngoại, `CHECK`, tên ràng buộc — mục 3, mục 3.6), nên **không
-dùng cho production**. Schema v1 đã chốt; việc tiếp theo về DB là chuyển sang **Flyway**: mỗi thay đổi
-schema là một file SQL đánh số (`V1__create_tables.sql`, `V2__add_variants.sql`), chạy tuần tự và ghi lại
-lịch sử — đây là cách làm chuẩn trong dự án thật. `V1` nên lấy đúng schema đang chạy (đã đối chiếu ở đầu
-mục 3), kèm tên tường minh cho mọi ràng buộc.
+### Schema do Flyway quản lý
+
+Mỗi thay đổi schema là một file SQL đánh số trong `BE/src/main/resources/db/migration`. Lúc app khởi động,
+Flyway chạy những file mà DB đó chưa chạy, theo thứ tự version, và ghi lại từng file đã chạy (kèm checksum)
+vào bảng `flyway_schema_history`. Nhờ vậy mọi DB — máy dev, container của `docker-compose.yml` — đi qua đúng cùng một chuỗi thay đổi.
+
+- **`V1__baseline.sql`** là schema v1: tám bảng ở mục 3, kèm tên tường minh cho mọi ràng buộc. Không để
+  Hibernate tự sinh schema (`ddl-auto=update`): cách đó không có lịch sử thay đổi và không sửa được thứ đã tạo
+  (khoá ngoại, `CHECK`, tên ràng buộc).
+- **Không sửa file đã chạy.** Checksum lệch thì Flyway từ chối khởi động. Muốn đổi thì thêm `V2__...`.
+- **Hibernate chỉ kiểm, không tạo** (`ddl-auto=validate`): entity lệch bảng hay cột thì app không khởi động.
+  Nó không kiểm index hay `CHECK` (bẫy ở mục 3.6).
+- **Dữ liệu mẫu tách khỏi schema**, nằm ở `db/seed` (`V1_1__demo_data.sql`: tài khoản, danh mục, sản phẩm, đơn
+  ở đủ trạng thái). Chỉ profile `demo` thêm thư mục đó vào `spring.flyway.locations`, nên môi trường không bật
+  profile chỉ có schema. Seed ghi `${image-base-url}` thay cho địa chỉ ảnh; Flyway thay bằng
+  `app.upload.public-url` lúc chạy. Version xen kẽ: seed của schema V1 là 1.1, của V2 sẽ là 2.1. File ảnh của
+  dữ liệu mẫu nằm trong jar (`src/main/resources/seed/images`); profile `demo` đặt
+  `app.upload.seed-images-location` để `WebConfig` tìm ảnh ở đó khi thư mục upload không có. `./mvnw
+  spring-boot:run` tự bật `demo` (thuộc tính `spring-boot.run.profiles` trong `pom.xml`), `docker-compose.yml`
+  cũng đặt `SPRING_PROFILES_ACTIVE=demo`.

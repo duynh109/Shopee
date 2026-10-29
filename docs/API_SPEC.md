@@ -5,15 +5,12 @@
 > - [`DATABASE_DESIGN.md`](DATABASE_DESIGN.md) — schema database và các nguyên tắc thiết kế
 > - [`SYSTEM_DESIGN.md`](SYSTEM_DESIGN.md) — lộ trình mở rộng hệ thống
 >
-> **Nguyên tắc thiết kế:** BE được thiết kế theo chuẩn REST thông dụng của hệ sinh thái Java/SQL, **không**
-> bám theo contract của FE hiện tại. FE sẽ được sửa lại cho khớp với spec này khi tích hợp — danh sách
-> việc cần sửa nằm ở [mục 12](#12-danh-sách-việc-cần-sửa-ở-fe-khi-tích-hợp).
->
-> **Thứ tự làm việc:** làm BE cho đúng và đầy đủ trước; FE sửa sau.
+> **Nguyên tắc thiết kế:** BE theo chuẩn REST thông dụng của hệ sinh thái Java/SQL — DTO trần, field
+> `camelCase`, lỗi RFC 9457. FE gọi đúng spec này; cách nối ở [mục 12](#12-fe-cách-nối-với-api).
 >
 > **Vị trí:** thư mục `docs/` nằm ở **gốc repo, ngang cấp với `BE/` và `FE/`** — vì đây là thiết kế
-> chung của cả hai nửa, không phải tài liệu riêng của BE. Khi sửa FE sau này, đọc lại bộ tài liệu này
-> trước: mỗi endpoint đều ghi rõ **màn nào của FE gọi tới nó** và route của màn đó.
+> chung của cả hai nửa, không phải tài liệu riêng của BE. Trước khi sửa FE, đọc lại bộ tài liệu này:
+> §1.10 ghi rõ **màn nào của FE gọi tới** từng endpoint và route của màn đó.
 
 ---
 
@@ -29,7 +26,8 @@ Mọi endpoint đều nằm dưới prefix `/api`. Lý do dùng prefix thay vì 
 
 - Tách bạch API với tài nguyên tĩnh khi cùng một server phục vụ cả hai (ảnh upload nằm ở `/images/**`,
   không lẫn với `/api/**`).
-- Khi deploy sau nginx chỉ cần một rule `location /api/ { proxy_pass http://localhost:8081; }`.
+- Nếu đặt BE sau nginx thì chỉ cần một rule `location /api/ { proxy_pass http://localhost:8081; }` (bản Docker
+  hiện tại không làm vậy: nginx chỉ phục vụ FE, trình duyệt gọi thẳng cổng 8081).
 - Dễ mở rộng sang versioning sau này (`/api/v1`, `/api/v2`) nếu cần.
 
 **Ba cách thêm prefix trong Spring Boot:**
@@ -221,8 +219,8 @@ POST /api/auth/register  →  422
   "title": "Dữ liệu không hợp lệ",
   "status": 422,
   "errors": {
-    "email": "Email đã tồn tại",
-    "password": "Độ dài từ 6-160 kí tự"
+    "email": "Email không hợp lệ",
+    "password": "Độ dài tối thiểu 6 kí tự"
   }
 }
 ```
@@ -245,13 +243,13 @@ giỏ" hai lần với sản phẩm chưa có trong giỏ: lượt nào cũng 1 
 Dòng WARN không ghi `ex.getMessage()` vì message chứa luôn giá trị bị trùng — email của người dùng. Hibernate
 cũng tự ghi mỗi lỗi SQL ở mức WARN kèm giá trị đó (`Duplicate entry 'an@gmail.com' …`, logger
 `org.hibernate.orm.jdbc.error`), nên `application.properties` nâng logger này lên `ERROR`. Không mất thông tin:
-lỗi thật vẫn được `GlobalExceptionHandler` ghi ERROR kèm stack trace (đã thử với `Data too long`). Đo lại trên
-toàn bộ hồi quy: log không chứa email nào.
+lỗi thật vẫn được `GlobalExceptionHandler` ghi ERROR kèm stack trace (đã thử với `Data too long`). Đo lại qua
+các luồng đăng ký, giỏ hàng, danh mục: log không chứa email nào.
 
 Hai cách viết sai, đã thử:
 
 - **So chuỗi trong message**, kiểu `getMessage().contains("UNIQUE")`: message của MySQL là
-  `Duplicate entry '…' for key 'users.UK6dot…'`, không có chữ "UNIQUE", lại chứa luôn giá trị người dùng
+  `Duplicate entry '…' for key 'users.uq_user_email'`, không có chữ "UNIQUE", lại chứa luôn giá trị người dùng
   nhập. Kết quả phụ thuộc vào dữ liệu: tạo trùng danh mục "Áo thun" → `500`, "Hàng UNIQUE" → `409`. Message
   là câu viết cho người đọc log, giống `title`; `getKind()` mới là giá trị để code so sánh, giống `type`.
 - **Bắt cả `DataIntegrityViolationException` thành `409`**: một URL ảnh quá 255 kí tự (giả lập thiếu `@Size`)
@@ -265,7 +263,7 @@ BE **luôn phải validate** dù FE đã validate (không bao giờ tin client):
 |---|---|---|
 | `email` | Bắt buộc, đúng định dạng email, độ dài 5–255 ¹ | `Email không hợp lệ` |
 | `password` | Bắt buộc, tối thiểu 6 kí tự, **tối đa 72 byte** ² | `Mật khẩu tối đa 72 kí tự` |
-| `quantity` | Số nguyên ≥ 1, ≤ tồn kho | `Số lượng vượt quá số lượng sản phẩm` |
+| `quantity` | Số nguyên ≥ 1, ≤ tồn kho | `Số lượng vượt quá số lượng sản phẩm trong kho` |
 | `phone`, `recipientPhone` | Số Việt Nam dạng trong nước: `0` + 9–10 chữ số ³. `recipientPhone` bắt buộc khi đặt hàng | `Số điện thoại không hợp lệ` |
 
 ¹ `@Email` của Hibernate Validator còn tự áp giới hạn của RFC: phần trước `@` tối đa 64 kí tự.
@@ -751,9 +749,9 @@ gọi `JwtService.parse()` rồi dựng `UserDetails` thẳng từ `sub` và `ro
 Payload ai cũng đọc được (chỉ là Base64) nhưng không sửa được: đã thử đổi `USER` thành `ADMIN` rồi giữ chữ
 ký cũ → `401 /errors/token-invalid`. Token không có claim `role` cũng bị coi là hỏng → `401 token-invalid`.
 
-Mỗi request đã đăng nhập bớt đúng một câu `SELECT users` (đo trước và sau khi chuyển `role` vào token):
+Mỗi request đã đăng nhập bớt đúng một câu `SELECT users` so với cách để filter nạp user từ DB (đã đo):
 
-| Request | Trước | Sau |
+| Request | Filter hỏi DB | Role lấy từ token |
 |---|---|---|
 | `GET /api/users/me` | 2 câu — cả hai là `SELECT users` | 1 |
 | `GET /api/cart` | 3 | 2 |
@@ -961,7 +959,7 @@ kiện `deleted_at IS NULL` không phải viết tay — `@SQLRestriction` trên
 ```json
 {
   "type": "/errors/not-found",
-  "title": "Không tìm thấy sản phẩm",
+  "title": "Không tìm thấy sản phẩm id: 12",
   "status": 404
 }
 ```
@@ -974,7 +972,7 @@ lại từ Java — hai người xem cùng lúc mà đọc-rồi-ghi thì mất 
 
 > Đây là một `GET` có ghi DB, phá quy ước "GET không có tác dụng phụ". Chấp nhận vì tác dụng phụ chỉ
 > là một bộ đếm. Cái giá: mỗi lượt xem trang chi tiết là một câu `UPDATE`. Quy mô lớn thì đếm ở
-> Redis rồi ghi dồn theo lô — xem `SYSTEM_DESIGN.md`.
+> Redis rồi ghi dồn xuống DB theo lô.
 
 
 ### 5.3. Soft delete và hệ quả của nó
@@ -1143,8 +1141,8 @@ Spring Boot: session Hibernate, và cả kết nối DB, được giữ suốt r
 **App này tắt nó** (`spring.jpa.open-in-view=false`). Bật thì mỗi request giữ kết nối lâu hơn cần thiết
 (pool chỉ có 10), và truy vấn có thể lén chạy ngoài service lúc ghi JSON mà không ai thấy. Quy tắc thay thế:
 mọi DTO được dựng xong **bên trong** một method `@Transactional` của service, cái gì cần thì nạp kèm bằng
-`@EntityGraph`/`JOIN FETCH` hoặc nạp theo lô bằng `@BatchSize` khi transaction còn mở. Đã đo: tắt đi, toàn bộ
-hồi quy vẫn đạt. Tắt còn làm thiếu sót lộ ra thay vì bị giấu: bỏ `@Transactional(readOnly = true)` ở
+`@EntityGraph`/`JOIN FETCH` hoặc nạp theo lô bằng `@BatchSize` khi transaction còn mở. Đã đo: tắt đi, mọi luồng vẫn
+chạy đúng. Tắt còn làm thiếu sót lộ ra thay vì bị giấu: bỏ `@Transactional(readOnly = true)` ở
 `OrderService.getMyOrders` → `GET /api/orders` trả `500 LazyInitializationException … (no session)` (dòng
 hàng nạp theo lô sau khi transaction đã đóng); bật `open-in-view` lại thì cùng code đó trả `200`, không ai
 biết thiếu transaction. `getMyOrder` — một đơn — thì không bị ảnh hưởng vì `@EntityGraph(attributePaths =
@@ -1580,20 +1578,34 @@ còn ném lỗi thì đơn đó sẽ không bao giờ huỷ được. Đã kiể
 
 `SecurityConfig` chặn cả nhóm bằng `.requestMatchers("/api/admin/**").hasRole("ADMIN")`. Các controller
 admin còn mang `@PreAuthorize("hasRole('ADMIN')")` ở mức class — lớp phòng thủ thứ hai (§6.3).
-Nhóm này cần thiết vì phải có cách tạo dữ liệu sản phẩm/danh mục và xử lý đơn hàng.
+Nhóm này là cách duy nhất để sửa danh mục, sản phẩm và xử lý đơn hàng; dữ liệu mẫu ban đầu do migration seed ở
+profile `demo` nạp (`DATABASE_DESIGN.md` mục 9).
 
 | Method | Path | Mô tả |
 |---|---|---|
 | `POST` | `/api/admin/categories` | Tạo danh mục — body `{ name }` |
 | `PUT` | `/api/admin/categories/{id}` | Sửa danh mục |
 | `DELETE` | `/api/admin/categories/{id}` | Xoá danh mục (chặn nếu còn sản phẩm) |
-| `POST` | `/api/admin/products` | Tạo sản phẩm — body gồm các field ở mục 2.3 (trừ `id`, `sold`, `view`, `rating`) |
+| `POST` | `/api/admin/products` | Tạo sản phẩm — body `{ name, description?, price, priceBeforeDiscount?, quantity, image?, images?, categoryId }`, rule ở bảng dưới |
 | `PUT` | `/api/admin/products/{id}` | Sửa sản phẩm |
 | `DELETE` | `/api/admin/products/{id}` | Xoá sản phẩm — **soft delete**, xem `DATABASE_DESIGN.md` mục 4.3 |
 | `POST` | `/api/admin/upload-image` | Upload ảnh sản phẩm, `multipart/form-data`, trả `{ url }` — xem §9.4 |
 | `GET` | `/api/admin/orders` | Xem tất cả đơn hàng (mọi user), có phân trang + lọc theo status |
 | `PUT` | `/api/admin/orders/{id}/status` | Đổi trạng thái đơn — body `{ status, cancelledReason? }`, xem §9.1 |
 | `GET` | `/api/admin/users` | Danh sách user, có phân trang |
+
+Rule của body tạo/sửa sản phẩm (`ProductRequest`), sai thì `422` kèm `errors`:
+
+| Field | Rule |
+|---|---|
+| `name` | Bắt buộc, tối đa 255 kí tự |
+| `description` | Tuỳ chọn, tối đa 10.000 kí tự (`DATABASE_DESIGN.md` §3.3) |
+| `price` | Bắt buộc, > 0 |
+| `priceBeforeDiscount` | Tuỳ chọn, > 0; `null` = không giảm giá |
+| `quantity` | Bắt buộc, ≥ 0 |
+| `image` | Tuỳ chọn, tối đa 255 kí tự |
+| `images[]` | Tuỳ chọn; từng phần tử không rỗng, tối đa 255 kí tự (§5.4) |
+| `categoryId` | Bắt buộc; danh mục không tồn tại → `404` (§6.3) |
 
 ### 9.1. `PUT /api/admin/orders/{id}/status` — đổi trạng thái đơn
 
@@ -1752,9 +1764,12 @@ chuyện thoát ra khỏi thư mục: gửi `filename="../../../evil.png"` → l
 `BE/uploads`, bên ngoài không xuất hiện file nào.
 
 **Nơi lưu:** thư mục `app.upload.dir` (đang là `uploads`, tính từ thư mục chạy app — chạy `./mvnw` trong
-`BE/` thì là `BE/uploads`, đã có trong `.gitignore`). Đường dẫn tuyệt đối được in ra log lúc khởi động.
+`BE/` thì là `BE/uploads`, đã có trong `.gitignore`). Đường dẫn tuyệt đối được in ra log lúc khởi động. Chạy bằng
+`docker compose` thì là `/app/uploads` trong container, gắn vào volume `uploads` nên tạo lại container vẫn còn ảnh.
+Ở profile `demo`, `/images/**` không thấy file trong thư mục đó thì tìm tiếp ở ảnh của dữ liệu mẫu nằm sẵn trong
+jar (`src/main/resources/seed/images`, cấu hình ở `WebConfig`), nên DB vừa dựng có ảnh ngay.
 Một server thì đủ dùng; chạy nhiều server thì phải chuyển sang object storage (`SYSTEM_DESIGN.md` §1.3).
-Chỉ `ImageStorageService` biết file nằm ở đâu, nên lúc đó chỉ phải sửa một class.
+Chỉ `ImageStorageService` (ghi) và `WebConfig` (phục vụ) biết file nằm ở đâu, nên lúc đó chỉ phải sửa hai class.
 
 **Giới hạn dung lượng** đặt bằng `spring.servlet.multipart.max-file-size=1MB` (cả request tối đa `2MB`, vì
 còn boundary và header). Spring kiểm lúc đọc body, **trước** khi vào controller, rồi ném
@@ -1781,24 +1796,21 @@ nữa) vẫn nằm lại trên đĩa, chưa có việc dọn. Cũng chưa giới
 
 ---
 
-## 10. Bảng đối chiếu: BE hiện tại vs spec
+## 10. Tình trạng hiện thực
 
-| Hạng mục | Hiện tại | Cần làm |
+| Hạng mục | Hiện tại | Giới hạn / việc tiếp theo |
 |---|---|---|
 | Hình dạng response thành công | ✅ Trả DTO trần, không vỏ bọc | — |
 | Hình dạng lỗi | ✅ `ProblemDetail` (RFC 9457), phủ cả lỗi trong filter | — |
 | Đường dẫn | ✅ `/api/*` đã đúng prefix | — |
 | `id` dạng string | ✅ Mọi DTO response, kể cả `OrderResponse` và `productId` trong `OrderItemResponse` | — |
-| Response register | ✅ Trả `{accessToken, expires, refreshToken, user}` | — |
 | Validation | ✅ Body của Auth, User, Category, Product, Cart, Order, đổi trạng thái đơn của admin qua `@Valid`; luật chéo giữa hai field (huỷ phải có lý do) ở service. Query param của `GET /api/products`, `GET /api/orders`, `GET /api/admin/orders`, `GET /api/admin/users` nhận qua record + `@ModelAttribute`; `sortBy` kiểm ở `ProductQuery.validate()`; sai kiểu → `400` (§1.6) | — |
 | CORS | ✅ Đã bật cho `localhost:3000` | — |
-| JWT filter | ✅ `JwtAuthenticationFilter` (`OncePerRequestFilter`) | — |
 | Refresh token | ✅ Phát khi login/register, đổi token có xoay vòng + phát hiện dùng lại (§3.4), logout thu hồi (§3.3), đổi mật khẩu thu hồi mọi token (§4.2), access token mang `role` và sống 15 phút, filter không hỏi DB, job hằng ngày xoá token quá hạn (§3.4) | — |
 | Bảo vệ endpoint | ✅ Phân quyền theo nhóm + `STATELESS` | Thêm rule khi có endpoint mới |
-| JWT secret, mật khẩu DB | ✅ `application.properties` chỉ ghi `${JWT_SECRET}` / `${DB_PASSWORD}`, không có giá trị mặc định — thiếu thì app không khởi động và báo tên biến. Giá trị lấy từ biến môi trường, hoặc file `BE/.env` (không commit, mẫu ở `BE/.env.example`). Secret xuất hiện trong các commit cũ đã bị thay, không còn ký được token: đã thử ký token ADMIN bằng nó → `401 token-invalid` | — |
-| Entity Product | ✅ Đủ field theo `DATABASE_DESIGN` §3.3, `price` là `Long`, soft delete, album ảnh | — |
-| Entity User | ✅ Đủ field + `@CreatedDate`/`@LastModifiedDate` | — |
-| Entity Category | ✅ Entity + CRUD đầy đủ, `Product.category` `@ManyToOne` | — |
+| JWT secret, mật khẩu DB | ✅ `application.properties` chỉ ghi `${JWT_SECRET}` / `${DB_PASSWORD}`, không có giá trị mặc định — thiếu thì app không khởi động và báo tên biến. Giá trị lấy từ biến môi trường, hoặc file `BE/.env` (không commit, mẫu ở `BE/.env.example`). Secret cũ còn trong lịch sử git không ký được token nữa: thử ký token ADMIN bằng nó → `401 token-invalid` | — |
+| Schema DB | ✅ Flyway: `V1__baseline.sql` dựng 8 bảng với tên ràng buộc tường minh, Hibernate chỉ `validate`; dữ liệu mẫu là migration riêng chỉ chạy ở profile `demo` (`DATABASE_DESIGN.md` mục 9) | Đổi schema = thêm file migration mới |
+| Entity & DTO | ✅ 8 entity khớp schema V1 (Hibernate `validate` lúc khởi động); mọi response là DTO (§2), không trả entity | — |
 | Entity CartItem | ✅ Entity + 5 endpoint, `UNIQUE(user_id, product_id)`, quyền sở hữu ở tầng service | — |
 | Entity Order / OrderItem | ✅ Entity + 4 endpoint §8, đã kiểm cả chạy song song (`DATABASE_DESIGN.md` §5) | — |
 | Máy trạng thái đơn | ✅ `PUT /api/admin/orders/{id}/status`: đủ 25 cặp chuyển, huỷ thì hoàn kho, COD giao xong thành `PAID`, khoá chung dòng với khách huỷ (§9.1) | — |
@@ -1807,10 +1819,11 @@ nữa) vẫn nằm lại trên đĩa, chưa có việc dọn. Cũng chưa giới
 | Upload ảnh | ✅ `MultipartFile`, kiểm magic number, tên UUID, tối đa 1MB → `413`, phục vụ ở `/images/**` (§9.4) | File không dùng tới vẫn nằm trên đĩa; chuyển object storage khi chạy nhiều server |
 | Phân trang / lọc | ✅ `GET /api/products` (`Pageable` + `Specification`), `GET /api/orders` và `GET /api/admin/orders` (`Pageable` + lọc `status`), `GET /api/admin/users` | — |
 | Tranh chấp ràng buộc `UNIQUE` | ✅ Hai request cùng lúc cùng đụng một `UNIQUE` (`users.email`, `categories.name`, `cart_items(user_id, product_id)`, `orders.order_code`): request đến sau nhận `409`, thử lại là đúng; các vi phạm ràng buộc khác vẫn `500` (§1.6) | — |
+| Kiểm thử tự động | ⚠️ Chỉ có test `contextLoads` mặc định; các phép đo trong tài liệu chạy bằng request thật, script không nằm trong repo | Viết test tích hợp, chạy trên CI |
 
 ---
 
-## 11. Lộ trình triển khai
+## 11. Lộ trình v1
 
 | Bước | Nội dung | Kiến thức Java/Spring học được |
 |---|---|---|
@@ -1824,16 +1837,7 @@ nữa) vẫn nằm lại trên đĩa, chưa có việc dọn. Cũng chưa giới
 | **8** ✅ | Admin + upload ảnh: đổi trạng thái đơn, danh sách đơn/user cho admin, upload ảnh, dọn giỏ khi gỡ sản phẩm | `@PreAuthorize`, `MultipartFile`, máy trạng thái, Spring event |
 | **9** ✅ | Refresh token + đưa `role` vào payload token, hạ TTL, tự dọn token quá hạn — xem §3.4 | Token lifecycle, `SecureRandom`, rollback rule (`noRollbackFor`), `@Scheduled` |
 
-Sau bước 7 là đã đủ để FE chạy hoàn chỉnh với BE này. Sau bước 9, cả 29/29 endpoint ở §1.10 đã có.
-
-**Dọn dẹp chốt v1** (sau bước 9): `409` khi hai request cùng lúc trùng ràng buộc `UNIQUE` (§1.6); chặn URL ảnh
-và mô tả sản phẩm vượt độ dài cột; secret chuyển sang biến môi trường và đổi secret mới (§10); tắt
-`open-in-view` (§6.4); rà toàn bộ tài liệu cho khớp code và schema thật (`DATABASE_DESIGN.md` mục 3).
-
-Hồi quy cuối của v1 (2026-10-09): 242/242 ca đạt — 101 ca phủ bước 3–9 kể cả 3 kịch bản chạy song song, 32
-ca upload, 14 ca dọn giỏ, 79 ca riêng cho refresh token (phát, đổi kể cả đổi song song, thu hồi, `role` trong
-access token, job dọn token), 16 ca cho `409` khi trùng `UNIQUE` và giới hạn độ dài — log không có dòng
-`ERROR` nào.
+Cả 29 endpoint ở §1.10 đã có; FE người mua gọi đủ phần của nó (§12).
 
 ---
 
@@ -1850,7 +1854,9 @@ vào mọi request. Interceptor response xử lý lỗi theo `type` (§1.6):
 - `401` `/errors/token-expired` → gọi `POST auth/refresh-token`, lưu đè **cả** `accessToken` lẫn `refreshToken` mới,
   rồi gửi lại request gốc đúng một lần. Người dùng không thấy gì.
 - `401` `/errors/refresh-token-invalid` hoặc `/errors/token-invalid` → xoá phiên (`clearLS`). `AppContext` nghe
-  tín hiệu đó, đưa giao diện về trạng thái chưa đăng nhập và xoá dữ liệu đã tải; `ProtectedRoute` chuyển về `/login`.
+  tín hiệu đó, đưa giao diện về trạng thái chưa đăng nhập và xoá dữ liệu riêng đã tải (giỏ, đơn, hồ sơ) nhưng giữ dữ
+  liệu công khai (`PUBLIC_QUERY_KEYS`: sản phẩm, danh mục) để trang đang mở không bị trắng; `ProtectedRoute` chuyển
+  về `/login`.
 - Lỗi khác, trừ `422` → toast hiện `title` (lỗi mạng không có response thì dùng `message` của axios). `422` không
   toast vì mỗi form tự đưa `errors` về đúng ô nhập.
 
@@ -1870,7 +1876,7 @@ Các điểm khác:
 - Đổi mật khẩu thành công thì mọi refresh token cũ bị thu hồi (§4.2), nên `ChangePassword` gọi lại `auth/login`
   bằng mật khẩu mới để có cặp token mới.
 - Interceptor lưu token và profile khi response của `auth/login` hoặc `auth/register` về, nhận ra bằng
-  `url === apiPath.login`. `constants/apiPath.ts` (đường dẫn API) tách khỏi `constants/path.ts` (route của React
+  `url === apiPath.login || url === apiPath.register`. `constants/apiPath.ts` (đường dẫn API) tách khỏi `constants/path.ts` (route của React
   Router) vì hai thứ này khác nhau dù trùng chữ.
 
 ### 12.2. Đọc response

@@ -1,0 +1,6 @@
+# Những thứ không gửi vào Docker lúc build. .env chứa secret: không bao giờ được nằm trong image.
+.env
+target/
+uploads/
+.idea/
+HELP.md
