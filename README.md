@@ -1,5 +1,7 @@
 # Shopee Clone
 
+[![CI](https://github.com/duynh109/Shopee/actions/workflows/ci.yml/badge.svg)](https://github.com/duynh109/Shopee/actions/workflows/ci.yml)
+
 Ứng dụng thương mại điện tử mô phỏng Shopee: backend REST API viết bằng Spring Boot và frontend React cho người
 mua, chung một repo. Người mua đi được trọn luồng: đăng ký → tìm và xem sản phẩm → giỏ hàng → đặt và huỷ đơn →
 hồ sơ và đổi mật khẩu. Backend theo chuẩn REST thông dụng của hệ sinh thái Java (trả DTO trần, lỗi theo RFC 9457,
@@ -20,6 +22,7 @@ Chạy cả hệ thống (MySQL, backend, frontend) bằng một lệnh `docker 
 | **Backend** | **Đủ 29 endpoint** (bảng ở `docs/API_SPEC.md` mục 1.10). Có: đăng ký, đăng nhập, đăng xuất bằng JWT kèm refresh token (xoay vòng, phát hiện token bị lộ, tự dọn token quá hạn); phân quyền USER/ADMIN theo từng nhóm endpoint; xử lý lỗi theo RFC 9457; hồ sơ cá nhân; danh mục; sản phẩm có phân trang, lọc, sắp xếp, album ảnh, xoá mềm; giỏ hàng; đặt hàng, xem đơn và huỷ đơn; admin xem mọi đơn, đổi trạng thái đơn theo máy trạng thái, xem danh sách người dùng; upload ảnh sản phẩm và avatar; gỡ sản phẩm thì tự dọn khỏi giỏ hàng của mọi người |
 | **Frontend** | Xong phần người mua: danh sách và chi tiết sản phẩm (tìm kiếm, lọc, phân trang), đăng ký/đăng nhập với refresh token tự đổi, giỏ hàng, đặt hàng (từ giỏ hoặc "Mua ngay"), đơn mua (tab trạng thái, chi tiết, huỷ), hồ sơ kèm avatar, đổi mật khẩu. Cách nối với API ở `docs/API_SPEC.md` mục 12. Chưa có màn quản trị |
 | **Đóng gói** | Schema quản lý bằng Flyway migration, dữ liệu mẫu là migration riêng bật theo profile. Mỗi nửa có Dockerfile; `docker-compose.yml` dựng cả hệ thống từ máy trống |
+| **Kiểm thử** | Test tích hợp gọi HTTP thật vào app chạy trên MySQL thật (Testcontainers): xác thực, refresh token, phân quyền, máy trạng thái đơn, tồn kho khi nhiều người mua cùng lúc. Test đơn vị cho FE (Vitest), một luồng end-to-end trên trình duyệt (Playwright). GitHub Actions chạy cả ba ở mỗi lần push — xem [Kiểm thử](#kiểm-thử) |
 
 ## Cấu trúc
 
@@ -28,6 +31,8 @@ docs/                Tài liệu thiết kế dùng chung cho cả hai nửa
 BE/                  Spring Boot — REST API, port 8081
 FE/                  React + Vite — port 3000
 docker-compose.yml   MySQL + BE + FE
+e2e/                 Test end-to-end bằng Playwright
+.github/workflows/   CI trên GitHub Actions
 ```
 
 ## Kiến trúc
@@ -63,6 +68,8 @@ React Hook Form + Yup · React Router 6 · Axios
 
 **Đóng gói** — Docker (build nhiều giai đoạn) · Docker Compose · nginx
 
+**Kiểm thử** — JUnit 5 · Testcontainers · Vitest · Playwright · GitHub Actions
+
 ## Tài liệu thiết kế
 
 Toàn bộ thiết kế nằm trong `docs/` và khớp với code hiện tại:
@@ -90,7 +97,7 @@ Vài quyết định thiết kế đáng chú ý ở backend:
 - **Tồn kho đúng cả khi nhiều người mua cùng lúc.** Kiểm tra và trừ kho nằm trong cùng một câu `UPDATE`
   có điều kiện; bấm "Đặt hàng" hai lần không tạo ra hai đơn; huỷ đơn khoá dòng để kho không bị hoàn hai
   lần. Đã thử bằng request gửi song song: 20 người cùng mua 5 món cuối → đúng 5 đơn, 15 người nhận `409`
-  (cách đo ở `docs/DATABASE_DESIGN.md` mục 5).
+  (test `BE/src/test/java/com/duynh/shopee/order/StockConcurrencyIT.java`).
 - **Hai request cùng lúc trùng ràng buộc `UNIQUE`** (email, tên danh mục, dòng giỏ, mã đơn) thì request đến
   sau nhận `409` thay vì `500`; dữ liệu dài quá cột bị chặn ở validation (`422`) trước khi xuống database.
 - **Refresh token xoay vòng và tự phát hiện token bị lộ.** Access token chỉ sống 15 phút; mỗi lần đổi
@@ -105,13 +112,14 @@ Vài quyết định thiết kế đáng chú ý ở backend:
 **Cần có:** Docker có Compose v2.
 
 ```bash
-cp .env.example .env    # rồi điền DB_PASSWORD (tuỳ ý) và JWT_SECRET — cách tạo secret ghi ngay trong file
-docker compose up --build
+cp BE/.env.example BE/.env    # rồi điền DB_PASSWORD (tuỳ ý) và JWT_SECRET — cách tạo secret ghi ngay trong file
+docker compose --env-file BE/.env up --build
 ```
 
 Mở `http://localhost:3000`, đăng nhập bằng `an.nguyen@gmail.com` / `123456` (các tài khoản khác ở
 [dữ liệu mẫu](#schema-và-dữ-liệu-mẫu)). Lần đầu build mất vài phút vì phải tải thư viện; các lần sau dùng cache.
-Thiếu `.env` thì compose dừng ngay và báo tên biến còn thiếu. `docker compose down` dừng hệ thống và giữ dữ
+Secret dùng chung file `BE/.env` với cách chạy từng phần bên dưới. Thiếu file hoặc quên `--env-file` thì compose
+dừng ngay và báo tên biến còn thiếu. `docker compose down` dừng hệ thống và giữ dữ
 liệu; thêm `-v` để xoá luôn DB và ảnh, lần chạy sau dựng lại từ đầu.
 
 MySQL trong container không mở cổng ra máy, nên không đụng MySQL đã cài sẵn; cổng 3000 và 8081 thì phải trống.
@@ -168,6 +176,34 @@ npm run dev
 
 Chạy ở `http://localhost:3000` — origin này đã được cấu hình CORS ở backend.
 
+## Kiểm thử
+
+```bash
+cd BE && ./mvnw verify       # cần Docker đang chạy; không cần MySQL cài sẵn
+cd FE && npm test            # Vitest
+cd FE && npm run lint        # ESLint, có cảnh báo cũng tính là hỏng
+```
+
+- **Backend.** Test tên `*Test` là test đơn vị, Maven chạy ở bước `test`. Test tên `*IT` là test tích hợp, chạy ở
+  bước `verify`. Mỗi test tích hợp khởi động app thật, gọi HTTP thật vào nó, trên một MySQL riêng do
+  Testcontainers dựng trong Docker rồi bỏ đi sau khi chạy xong. Flyway dựng schema từ đầu, nên test cũng kiểm luôn
+  migration, và database `shopee_db` ở máy không bị đụng tới. Phần đặt hàng, đổi refresh token, huỷ đơn có test
+  gửi request song song để bắt lỗi tranh chấp. Chạy riêng một lớp: `./mvnw verify -Dit.test=StockConcurrencyIT`.
+- **Frontend.** Test hàm tiện ích, luật validate form (phải khớp luật của backend) và việc giữ hay xoá cache khi
+  đăng xuất.
+- **End-to-end** (thư mục `e2e/`). Playwright mở Chromium, đăng nhập, mua ngay một sản phẩm và thấy đơn trong
+  Đơn mua, trên cả hệ thống dựng bằng Docker:
+
+  ```bash
+  docker compose --env-file BE/.env up -d --build
+  cd e2e && npm ci && npx playwright install chromium && npx playwright test
+  ```
+
+  Test tạo một đơn thật cho tài khoản `an.nguyen@gmail.com`; `docker compose down -v` xoá nó cùng database.
+
+GitHub Actions (`.github/workflows/ci.yml`) chạy backend và frontend song song ở mỗi lần push. Cả hai qua thì mới
+dựng hệ thống bằng Docker Compose và chạy end-to-end.
+
 ## Những gì chưa làm
 
 Liệt kê thẳng để khỏi phải đọc code mới biết:
@@ -175,9 +211,7 @@ Liệt kê thẳng để khỏi phải đọc code mới biết:
 - Ảnh upload lưu trên đĩa của máy chạy app — chạy nhiều server thì phải chuyển sang object storage; file
   upload rồi không dùng tới chưa được dọn
 - Chưa có màn quản trị ở frontend — các endpoint admin hiện gọi bằng curl hoặc Postman
-- **Gần như chưa có test tự động**: chỉ có một test kiểm app khởi động được (cần MySQL đang chạy), chưa có CI.
-  Các API được kiểm bằng cách chạy app rồi gọi thật từng ca và đối chiếu status code, phần đặt hàng thử cả
-  request gửi song song; các màn frontend kiểm trên trình duyệt. Các script kiểm đó chưa nằm trong repo
+- Test end-to-end mới có luồng mua hàng chính; các màn còn lại (giỏ hàng, hồ sơ, huỷ đơn) chưa có test trình duyệt
 - Người dùng không xoá trống được tên, số điện thoại, địa chỉ đã nhập: backend hiểu `null` là "đừng đổi"
   (`docs/API_SPEC.md` §4.2)
 - Mất response lúc đổi refresh token (mạng rớt đúng lúc) thì người dùng bị đăng xuất; backend chưa có thời gian

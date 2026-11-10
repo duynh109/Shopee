@@ -1,62 +1,10 @@
-import type { RegisterOptions, UseFormGetValues } from 'react-hook-form'
 import * as yup from 'yup'
 import { toISODate } from './utils'
 
-type Rules = { [key in 'email' | 'password' | 'confirm_password']?: RegisterOptions }
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const getRules = (getValues?: UseFormGetValues<any>): Rules => ({
-  email: {
-    required: {
-      value: true,
-      message: 'Email là bắt buộc'
-    },
-    pattern: {
-      value: /^\S+@\S+\.\S+$/,
-      message: 'Email không đúng định dạng'
-    },
-    maxLength: {
-      value: 160,
-      message: 'Độ dài từ 5-160 kí tự'
-    },
-    minLength: {
-      value: 5,
-      message: 'Độ dài từ 5-160 kí tự'
-    }
-  },
-  password: {
-    required: {
-      value: true,
-      message: 'Password là bắt buộc'
-    },
-    maxLength: {
-      value: 160,
-      message: 'Độ dài từ 6-160 kí tự'
-    },
-    minLength: {
-      value: 6,
-      message: 'Độ dài từ 6-160 kí tự'
-    }
-  },
-  confirm_password: {
-    required: {
-      value: true,
-      message: 'Nhập lại password là bắt buộc'
-    },
-    maxLength: {
-      value: 160,
-      message: 'Độ dài từ 6-160 kí tự'
-    },
-    minLength: {
-      value: 6,
-      message: 'Độ dài từ 6-160 kí tự'
-    },
-    validate:
-      typeof getValues === 'function'
-        ? (value) => value === getValues('password') || 'Nhập lại password không khớp'
-        : undefined
-  }
-})
+// BE giới hạn mật khẩu theo BYTE (bcrypt chỉ đọc 72 byte đầu), không theo kí tự: chữ có dấu chiếm 2–3 byte
+const MAX_PASSWORD_BYTES = 72
+const fitsPasswordBytes = (value?: string) => !value || new TextEncoder().encode(value).length <= MAX_PASSWORD_BYTES
+const PASSWORD_TOO_LONG = 'Mật khẩu quá dài (tối đa 72 byte, chữ có dấu chiếm nhiều byte hơn)'
 
 function testPriceMinMax(this: yup.TestContext<yup.AnyObject>) {
   const { priceMin, priceMax } = this.parent
@@ -69,23 +17,22 @@ function testPriceMinMax(this: yup.TestContext<yup.AnyObject>) {
 const PHONE_REGEX = /^0\d{9,10}$/
 
 export const schema = yup.object({
+  // Cùng luật với BE (RegisterRequest): email 5–255 kí tự, mật khẩu tối thiểu 6 kí tự và tối đa 72 byte
   email: yup
     .string()
     .required('Email là bắt buộc')
     .email('Email không đúng định dạng')
-    .min(5, 'Độ dài từ 5-160 kí tự')
-    .max(160, 'Độ dài từ 5-160 kí tự'),
+    .min(5, 'Độ dài từ 5-255 kí tự')
+    .max(255, 'Độ dài từ 5-255 kí tự'),
   password: yup
     .string()
     .required('Password là bắt buộc')
-    .min(6, 'Độ dài từ 6-160 kí tự')
-    .max(160, 'Độ dài từ 6-160 kí tự'),
+    .min(6, 'Độ dài tối thiểu 6 kí tự')
+    .test('max-bytes', PASSWORD_TOO_LONG, fitsPasswordBytes),
   confirm_password: yup
     .string()
     .required('Nhập lại password là bắt buộc')
-    .min(6, 'Độ dài từ 6-160 kí tự')
-    .max(160, 'Độ dài từ 6-160 kí tự')
-    .oneOf([yup.ref('password')], 'Nhập lại password không khớp '),
+    .oneOf([yup.ref('password')], 'Nhập lại password không khớp'),
   priceMin: yup.string().test({
     name: 'price-not-allowed',
     message: 'Giá không phù hợp',
@@ -117,9 +64,6 @@ export const profileSchema = yup.object({
     .test('past', 'Ngày sinh phải là ngày trong quá khứ', (value) => !value || value < toISODate(new Date()))
 })
 
-// BE giới hạn mật khẩu theo BYTE (bcrypt chỉ đọc 72 byte đầu), không theo kí tự: chữ có dấu chiếm 2–3 byte
-const MAX_PASSWORD_BYTES = 72
-
 export const changePasswordSchema = yup.object({
   // Chỉ bắt buộc nhập: đúng hay sai là việc của BE
   password: yup.string().required('Vui lòng nhập mật khẩu hiện tại'),
@@ -127,11 +71,7 @@ export const changePasswordSchema = yup.object({
     .string()
     .required('Vui lòng nhập mật khẩu mới')
     .min(6, 'Độ dài tối thiểu 6 kí tự')
-    .test(
-      'max-bytes',
-      'Mật khẩu quá dài (tối đa 72 byte, chữ có dấu chiếm nhiều byte hơn)',
-      (value) => !value || new TextEncoder().encode(value).length <= MAX_PASSWORD_BYTES
-    ),
+    .test('max-bytes', PASSWORD_TOO_LONG, fitsPasswordBytes),
   confirmNewPassword: yup
     .string()
     .required('Vui lòng nhập lại mật khẩu mới')

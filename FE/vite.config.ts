@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react-swc'
 import path from 'path'
@@ -10,6 +11,10 @@ export default defineConfig({
   },
   css: {
     devSourcemap: true
+  },
+  // Vitest dùng chung cấu hình này (alias '~'...). Test là logic thuần nên chạy trong Node, không cần trình duyệt giả.
+  test: {
+    include: ['src/**/*.test.ts']
   },
   resolve: {
     alias: {

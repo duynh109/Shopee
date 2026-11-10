@@ -5,6 +5,8 @@ docs/                thiết kế dùng chung cho cả hai nửa — ĐỌC TRƯ
 BE/                  Spring Boot 4.1 / Java 21 / MySQL / Flyway — port 8081
 FE/                  React + TypeScript + Vite — port 3000
 docker-compose.yml   MySQL + BE + FE (Dockerfile ở BE/ và FE/)
+e2e/                 Playwright, chạy trên hệ thống dựng bằng compose
+.github/workflows/   CI: BE verify, FE lint+test+build, rồi e2e
 ```
 
 ## Đọc `docs/` trước
@@ -17,7 +19,8 @@ docker-compose.yml   MySQL + BE + FE (Dockerfile ở BE/ và FE/)
 
 ## Trạng thái
 
-BE đủ 29/29 endpoint (cột `BE` ở `docs/API_SPEC.md` §1.10), FE người mua xong, chưa có màn admin. §10 đối chiếu
+BE đủ 29/29 endpoint (cột `BE` ở `docs/API_SPEC.md` §1.10), FE người mua xong, chưa có màn admin. Có test tích hợp
+BE, test FE, một luồng E2E, chạy trên GitHub Actions. §10 đối chiếu
 từng hạng mục với code; cột "Giới hạn / việc tiếp theo" là phần còn thiếu. Đừng suy ra trạng thái từ code: thêm hay
 đổi gì thì cập nhật §1.10 và §10 cùng lúc. Docs mô tả repo hiện tại — không ghi lịch sử làm ("ở bước N", ngày làm).
 
@@ -52,15 +55,15 @@ thì cập nhật cột "Màn FE" ở §1.10 cùng lúc.
 - **`spring.jpa.open-in-view=false`**: DTO phải dựng xong bên trong method `@Transactional` của service.
   Quên `@Transactional` ở một hàm đọc có quan hệ lazy thì nhận `LazyInitializationException` → `500`.
 - **Secret không bao giờ ghi vào `application.properties`** — file đó chỉ có `${JWT_SECRET}`, `${DB_PASSWORD}`,
-  không giá trị mặc định. Giá trị thật ở `BE/.env` (chạy `./mvnw`) và `.env` ở gốc repo (chạy Docker), cả hai đều
-  gitignore. Không in nội dung `.env` ra terminal hay chat.
+  không giá trị mặc định. Giá trị thật ở `BE/.env` (gitignore), dùng chung cho `./mvnw` và
+  `docker compose --env-file BE/.env`. Không in nội dung `.env` ra terminal hay chat.
 - **Schema do Flyway quản lý** (`BE/src/main/resources/db/migration`), Hibernate chỉ `ddl-auto=validate`. Đổi schema
   = thêm file `V<n>__mo_ta.sql` mới (kèm sửa entity), **không bao giờ sửa file đã chạy**: checksum lệch thì app
   không khởi động. `validate` bắt entity lệch bảng/cột/kiểu, nhưng **không** kiểm index hay `CHECK` — thêm giá trị
   enum mà quên migration `DROP/ADD CHECK` thì chỉ lỗi `500` lúc ghi (`docs/DATABASE_DESIGN.md` §3.6).
 - **Dữ liệu mẫu là migration riêng ở `db/seed`, chỉ chạy ở profile `demo`** (version xen kẽ: `V1_1`, sau này
-  `V2_1`...). `./mvnw spring-boot:run` tự bật `demo` (thuộc tính `spring-boot.run.profiles` trong `pom.xml`), test
-  cũng `@ActiveProfiles("demo")`. DB dev đã nạp seed thì luôn chạy với `demo`: khi đã có `V2`, thiếu profile là
+  `V2_1`...). `./mvnw spring-boot:run` tự bật `demo` (thuộc tính `spring-boot.run.profiles` trong `pom.xml`);
+  test tích hợp chạy không có profile, trừ `SeedMigrationIT`. DB dev đã nạp seed thì luôn chạy với `demo`: khi đã có `V2`, thiếu profile là
   Flyway báo migration 1.1 "not resolved locally" và app không khởi động. Seed viết `${image-base-url}` thay cho
   địa chỉ ảnh.
 - **FE: `priceBeforeDiscount` có thể `null`** (sản phẩm và dòng đơn hàng; `null` = không giảm giá). Dùng
@@ -74,20 +77,30 @@ thì cập nhật cột "Màn FE" ở §1.10 cùng lúc.
 ## Chạy
 
 ```bash
-# Cả hệ thống bằng Docker (MySQL + BE + FE, .env ở gốc repo — khác BE/.env)
-cp .env.example .env && docker compose up --build
+# Cả hệ thống bằng Docker (MySQL + BE + FE), secret dùng chung BE/.env
+docker compose --env-file BE/.env up --build
 
 # BE
 cd BE && cp .env.example .env            # một lần: điền DB_PASSWORD, JWT_SECRET
 cd BE && ./mvnw spring-boot:run          # cần JAVA_HOME trỏ tới JDK 21; profile demo, DB tự tạo + migrate
 cd BE && ./mvnw clean compile            # kiểm tra compile thật
-cd BE && ./mvnw test                     # cần MySQL dev đang chạy: test khởi động app trên shopee_db, profile demo
+cd BE && ./mvnw verify                   # unit + tích hợp; cần Docker (Testcontainers), không đụng shopee_db
+cd BE && ./mvnw verify -Dit.test=AuthIT  # một lớp test tích hợp
 
 # FE
 cd FE && npm run dev
 cd FE && npm run build                   # tsc -b + vite build
-cd FE && npm run lint
+cd FE && npm run lint                    # --max-warnings 0: có cảnh báo là hỏng, như CI
+cd FE && npm test                        # Vitest
+
+# E2E (Playwright) — cần cả hệ thống đang chạy bằng compose ở trên
+cd e2e && npm ci && npx playwright install chromium && npx playwright test
 ```
+
+> **Test BE**: tên `*Test` là test đơn vị (surefire, bước `test`), tên `*IT` là test tích hợp (failsafe, bước
+> `verify`): kế thừa `support/IntegrationTest`, app thật trên MySQL riêng do Testcontainers dựng. Tạo dữ liệu và gọi
+> API **qua `support/TestApi`**, không viết request hay SQL thẳng trong test — đổi API thì chỉ sửa một chỗ đó. Mỗi
+> test tự tạo user/sản phẩm mới (email ngẫu nhiên) nên các test không phụ thuộc thứ tự hay dữ liệu của nhau.
 
 > Compiler của VSCode Java extension vẫn sinh `.class` cho code sai (thay thân method bằng
 > `throw new Error(...)`), nên **file `.class` mới không chứng minh code compile được**.
